@@ -20,11 +20,11 @@ set(PETSIRD_dir ../PETSIRD/cpp/generated)
 add_subdirectory(${PETSIRD_dir} PETSIRD_generated)
 
 
-# add_executable(petsird_castor_converter petsird_castor_converter.cpp)
-# target_include_directories(petsird_castor_converter PRIVATE "${PETSIRD_dir}/")
-# # needed for generated PETSIRD files
-# target_include_directories(petsird_castor_converter PRIVATE "${PETSIRD_dir}/../")
-# target_include_directories(petsird_castor_converter PRIVATE "${PETSIRD_dir}/../helpers/include")
-# target_link_libraries(petsird_castor_converter petsird_generated)
+add_executable(petsird_castor_converter petsird_castor_converter.cpp)
+target_include_directories(petsird_castor_converter PRIVATE "${PETSIRD_dir}/")
+# needed for generated PETSIRD files
+target_include_directories(petsird_castor_converter PRIVATE "${PETSIRD_dir}/../")
+target_include_directories(petsird_castor_converter PRIVATE "${PETSIRD_dir}/../helpers/include")
+target_link_libraries(petsird_castor_converter petsird_generated)
 
 # # install(TARGETS my_prog DESTINATION bin)
