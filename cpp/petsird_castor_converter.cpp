@@ -409,7 +409,7 @@ int main(int argc, char** argv)
   {
     nb_detectors_in_scanner += petsird_helpers::get_num_det_els(header.scanner, rm);
   }
-  //
+  if (verbose>1) cout << "--> Number of detector in scanner : " << nb_detectors_in_scanner << endl;
   uint32_t**** table_petsird2castor_id = (uint32_t****)malloc(nb_detectors_in_scanner * sizeof(uint32_t***));
 
   // We will search for the minimum and maximum positions in each axis independently
@@ -428,413 +428,413 @@ int main(int argc, char** argv)
   double center_y = 0.;
   double center_z = 0.;
 
-  // Loop over the lists of replicates module (top level in the scanner geomety)
-  if (verbose>1) cout << "--> Processing scanner elements" << endl;
-  uint32_t flat_index = 0;
-  for (uint32_t ml=0; ml<header.scanner.scanner_geometry.ids.size(); ml++)
-  {
-    if (verbose>2) cout << "  --> Replicated module list #" << header.scanner.scanner_geometry.ids[ml] << endl;
-    // Get the module associated to this list
-    const auto& rep_module = header.scanner.scanner_geometry.replicated_modules[ml];
-    // Allocate the table of ids
-    table_petsird2castor_id[ml] = (uint32_t***)malloc(rep_module.transforms.size()*sizeof(uint32_t**));
-    // Loop over the transforms associated to the replicated module
-    for (uint32_t mtr=0; mtr<rep_module.transforms.size(); mtr++)
-    {
-      if (verbose>2) cout << "    --> Module #" << rep_module.ids[mtr] << endl;
-      // Get the transform associated to this module
-      const auto& mod_transform = rep_module.transforms[mtr];
-      // Allocate the table of ids
-      table_petsird2castor_id[ml][mtr] = (uint32_t**)malloc(rep_module.object.detecting_element_ids.size()*sizeof(uint32_t*));
-      // Loop over the lists of replicated detector elements
-      for (uint32_t dl=0; dl<rep_module.object.detecting_element_ids.size(); dl++)
-      {
-        if (verbose>2) cout << "      --> Replicated detector list #" << rep_module.object.detecting_element_ids[dl] << endl;
-        // Get the replicated detector element associated to this list
-        const auto& rep_volume = rep_module.object.detecting_elements[dl];
-        // Get the box shape
-	/////////////////////////////////////////////////////////////////
-	// NICOLAS: For normal reading, leave the first line uncommented.
-	// To apply a shift, comment the first line and uncomment the two
-	// following lines. The shift can be changed in the function
-	// translate_BoxShape. It is currently +1.6 over Y and Z.
-	// The shift applied here is only applied on the reference volume
-	// that is then transformed using the transformations as read from
-	// the petsird file.
-        const auto& box_shape = rep_volume.object.shape;
-        //const auto& box_shape_orig = rep_volume.object.shape;
-	//const auto& box_shape = translate_BoxShape(box_shape_orig);
-	/////////////////////////////////////////////////////////////////
-        // Compute centroid
-        if (verbose>3)
-        {
-          const auto& orig_centroid = compute_centroid_BoxShape(box_shape);
-          cout << "        | Original detecting element centroid #" << flat_index << " [" << orig_centroid.c[0] << "; " << orig_centroid.c[1] << "; " << orig_centroid.c[2] << "]" << endl;
-        }
-        // Allocate the table of ids
-        table_petsird2castor_id[ml][mtr][dl] = (uint32_t*)malloc(rep_volume.transforms.size()*sizeof(uint32_t));
-        // Loop over the transforms associated to the replicated volume
-        for (uint32_t dtr=0; dtr<rep_volume.transforms.size(); dtr++)
-        {
-          if (verbose>2) cout << "        --> Volume #" << rep_volume.ids[dtr] << endl;
-          // Get the transform associated to this volume
-          const auto& vol_transform = rep_volume.transforms[dtr];
-          // Apply transformations on the box
-          const auto& transformed_box_shape = transform_BoxShape(box_shape, vol_transform, mod_transform);
-          // Compute centroid
-          const auto& centroid = compute_centroid_BoxShape(transformed_box_shape);
-          // Verbose
-          if (verbose>2)
-          {
-            cout << "          | Detector id: " << flat_index << " | PETSIRD detector ids [ " << ml << " ; " << mtr << " ; " << dl << " ; " << dtr << " ]" << endl;
-            cout << "          | Centroid [" << centroid.c[0] << "; " << centroid.c[1] << "; " << centroid.c[2] << "] mm" << endl;
-          }
-	  if (verbose>4)
-	  {
-            cout << "          | Press enter to continue" << endl;
-            getchar();
-	  }
-          // Write centroid into the CASToR LUT file
-	  if (flag_write)
-	  {
-            // This is the centroid of the detecting element
-            nb_data_written_in_lut += fwrite(&(centroid.c[0]), sizeof(float), 1, flut);
-            nb_data_written_in_lut += fwrite(&(centroid.c[1]), sizeof(float), 1, flut);
-            nb_data_written_in_lut += fwrite(&(centroid.c[2]), sizeof(float), 1, flut);
-	    // The orientation vector is set to zero for now
-            float zero = 0.;
-            nb_data_written_in_lut += fwrite(&zero, sizeof(float), 1, flut);
-            nb_data_written_in_lut += fwrite(&zero, sizeof(float), 1, flut);
-            nb_data_written_in_lut += fwrite(&zero, sizeof(float), 1, flut);
-	  }
-          // Add the indices to the map
-          tuple<uint32_t, uint32_t, uint32_t, uint32_t> petsird_ids = tuple(ml, mtr, dl, dtr);
-          map_petsird2castor_id.insert({ petsird_ids, flat_index });
-          map_castor2petsird_id.insert({ flat_index, petsird_ids });
-          table_petsird2castor_id[ml][mtr][dl][dtr] = flat_index;
-          // Increment the flat index
-          flat_index++;
-          // Update min/max x,y,z
-          if (centroid.c[0]<min_x) min_x = centroid.c[0];
-          if (centroid.c[1]<min_y) min_y = centroid.c[1];
-          if (centroid.c[2]<min_z) min_z = centroid.c[2];
-          if (centroid.c[0]>max_x) max_x = centroid.c[0];
-          if (centroid.c[1]>max_y) max_y = centroid.c[1];
-          if (centroid.c[2]>max_z) max_z = centroid.c[2];
-	  // Update center of mass
-	  center_x += ((double)(centroid.c[0]));
-	  center_y += ((double)(centroid.c[1]));
-	  center_z += ((double)(centroid.c[2]));
-        }
-      }
-    }
-  }
+//   // Loop over the lists of replicates module (top level in the scanner geomety)
+//   if (verbose>1) cout << "--> Processing scanner elements" << endl;
+//   uint32_t flat_index = 0;
+//   for (uint32_t ml=0; ml<header.scanner.scanner_geometry.ids.size(); ml++)
+//   {
+//     if (verbose>2) cout << "  --> Replicated module list #" << header.scanner.scanner_geometry.ids[ml] << endl;
+//     // Get the module associated to this list
+//     const auto& rep_module = header.scanner.scanner_geometry.replicated_modules[ml];
+//     // Allocate the table of ids
+//     table_petsird2castor_id[ml] = (uint32_t***)malloc(rep_module.transforms.size()*sizeof(uint32_t**));
+//     // Loop over the transforms associated to the replicated module
+//     for (uint32_t mtr=0; mtr<rep_module.transforms.size(); mtr++)
+//     {
+//       if (verbose>2) cout << "    --> Module #" << rep_module.ids[mtr] << endl;
+//       // Get the transform associated to this module
+//       const auto& mod_transform = rep_module.transforms[mtr];
+//       // Allocate the table of ids
+//       table_petsird2castor_id[ml][mtr] = (uint32_t**)malloc(rep_module.object.detecting_element_ids.size()*sizeof(uint32_t*));
+//       // Loop over the lists of replicated detector elements
+//       for (uint32_t dl=0; dl<rep_module.object.detecting_element_ids.size(); dl++)
+//       {
+//         if (verbose>2) cout << "      --> Replicated detector list #" << rep_module.object.detecting_element_ids[dl] << endl;
+//         // Get the replicated detector element associated to this list
+//         const auto& rep_volume = rep_module.object.detecting_elements[dl];
+//         // Get the box shape
+// 	/////////////////////////////////////////////////////////////////
+// 	// NICOLAS: For normal reading, leave the first line uncommented.
+// 	// To apply a shift, comment the first line and uncomment the two
+// 	// following lines. The shift can be changed in the function
+// 	// translate_BoxShape. It is currently +1.6 over Y and Z.
+// 	// The shift applied here is only applied on the reference volume
+// 	// that is then transformed using the transformations as read from
+// 	// the petsird file.
+//         const auto& box_shape = rep_volume.object.shape;
+//         //const auto& box_shape_orig = rep_volume.object.shape;
+// 	//const auto& box_shape = translate_BoxShape(box_shape_orig);
+// 	/////////////////////////////////////////////////////////////////
+//         // Compute centroid
+//         if (verbose>3)
+//         {
+//           const auto& orig_centroid = compute_centroid_BoxShape(box_shape);
+//           cout << "        | Original detecting element centroid #" << flat_index << " [" << orig_centroid.c[0] << "; " << orig_centroid.c[1] << "; " << orig_centroid.c[2] << "]" << endl;
+//         }
+//         // Allocate the table of ids
+//         table_petsird2castor_id[ml][mtr][dl] = (uint32_t*)malloc(rep_volume.transforms.size()*sizeof(uint32_t));
+//         // Loop over the transforms associated to the replicated volume
+//         for (uint32_t dtr=0; dtr<rep_volume.transforms.size(); dtr++)
+//         {
+//           if (verbose>2) cout << "        --> Volume #" << rep_volume.ids[dtr] << endl;
+//           // Get the transform associated to this volume
+//           const auto& vol_transform = rep_volume.transforms[dtr];
+//           // Apply transformations on the box
+//           const auto& transformed_box_shape = transform_BoxShape(box_shape, vol_transform, mod_transform);
+//           // Compute centroid
+//           const auto& centroid = compute_centroid_BoxShape(transformed_box_shape);
+//           // Verbose
+//           if (verbose>2)
+//           {
+//             cout << "          | Detector id: " << flat_index << " | PETSIRD detector ids [ " << ml << " ; " << mtr << " ; " << dl << " ; " << dtr << " ]" << endl;
+//             cout << "          | Centroid [" << centroid.c[0] << "; " << centroid.c[1] << "; " << centroid.c[2] << "] mm" << endl;
+//           }
+// 	  if (verbose>4)
+// 	  {
+//             cout << "          | Press enter to continue" << endl;
+//             getchar();
+// 	  }
+//           // Write centroid into the CASToR LUT file
+// 	  if (flag_write)
+// 	  {
+//             // This is the centroid of the detecting element
+//             nb_data_written_in_lut += fwrite(&(centroid.c[0]), sizeof(float), 1, flut);
+//             nb_data_written_in_lut += fwrite(&(centroid.c[1]), sizeof(float), 1, flut);
+//             nb_data_written_in_lut += fwrite(&(centroid.c[2]), sizeof(float), 1, flut);
+// 	    // The orientation vector is set to zero for now
+//             float zero = 0.;
+//             nb_data_written_in_lut += fwrite(&zero, sizeof(float), 1, flut);
+//             nb_data_written_in_lut += fwrite(&zero, sizeof(float), 1, flut);
+//             nb_data_written_in_lut += fwrite(&zero, sizeof(float), 1, flut);
+// 	  }
+//           // Add the indices to the map
+//           tuple<uint32_t, uint32_t, uint32_t, uint32_t> petsird_ids = tuple(ml, mtr, dl, dtr);
+//           map_petsird2castor_id.insert({ petsird_ids, flat_index });
+//           map_castor2petsird_id.insert({ flat_index, petsird_ids });
+//           table_petsird2castor_id[ml][mtr][dl][dtr] = flat_index;
+//           // Increment the flat index
+//           flat_index++;
+//           // Update min/max x,y,z
+//           if (centroid.c[0]<min_x) min_x = centroid.c[0];
+//           if (centroid.c[1]<min_y) min_y = centroid.c[1];
+//           if (centroid.c[2]<min_z) min_z = centroid.c[2];
+//           if (centroid.c[0]>max_x) max_x = centroid.c[0];
+//           if (centroid.c[1]>max_y) max_y = centroid.c[1];
+//           if (centroid.c[2]>max_z) max_z = centroid.c[2];
+// 	  // Update center of mass
+// 	  center_x += ((double)(centroid.c[0]));
+// 	  center_y += ((double)(centroid.c[1]));
+// 	  center_z += ((double)(centroid.c[2]));
+//         }
+//       }
+//     }
+//   }
 
-  // Finish center of mass computation
-  center_x /= ((double)flat_index);
-  center_y /= ((double)flat_index);
-  center_z /= ((double)flat_index);
+//   // Finish center of mass computation
+//   center_x /= ((double)flat_index);
+//   center_y /= ((double)flat_index);
+//   center_z /= ((double)flat_index);
 
-  // Verbose
-  if (verbose>1)
-  {
-    cout << "--> Number of detecting elements: " << flat_index << endl;
-    cout << "--> Min/Max of detector elements centroid coordinates" << endl;
-    cout << "  | Along X axis [ " << min_x << " ; " << max_x << " ]" << endl;
-    cout << "  | Along Y axis [ " << min_y << " ; " << max_y << " ]" << endl;
-    cout << "  | Along Z axis [ " << min_z << " ; " << max_z << " ]" << endl;
-    cout << "--> Scanner center of mass: [ " << center_x << " ; " << center_y << " ; " << center_z << " ]" << endl;
-  }
+//   // Verbose
+//   if (verbose>1)
+//   {
+//     cout << "--> Number of detecting elements: " << flat_index << endl;
+//     cout << "--> Min/Max of detector elements centroid coordinates" << endl;
+//     cout << "  | Along X axis [ " << min_x << " ; " << max_x << " ]" << endl;
+//     cout << "  | Along Y axis [ " << min_y << " ; " << max_y << " ]" << endl;
+//     cout << "  | Along Z axis [ " << min_z << " ; " << max_z << " ]" << endl;
+//     cout << "--> Scanner center of mass: [ " << center_x << " ; " << center_y << " ; " << center_z << " ]" << endl;
+//   }
 
-  // Close scanner LUT file
-  if (flag_write)
-  {
-    fclose(flut);
-    // Check for accurate writing
-    if (nb_data_written_in_lut != flat_index * 6)
-    {
-        cerr << "***** Failed to write all data in scanner LUT file !" << endl;
-        return 1;
-    }
-    // Verbose
-    if (verbose>1) cout << "--> CASToR scanner LUT file '" << scanner_name << ".lut' written" << endl;
-  }
-  // Write scanner header
-  if (flag_write)
-  {
-    string scanner_hscan_file = scanner_name + ".hscan";
-    ofstream hscan(scanner_hscan_file.c_str());
-    if (!hscan)
-    {
-      cerr << "***** Failed to open scanner header file '" << scanner_hscan_file << "' for writing !" << endl;
-      exit(1);
-    }
-    hscan << "modality: PET" << endl;
-    hscan << "number of elements: " << flat_index << endl;
-    hscan << "scanner radius: " << max(max_y-min_y,max_x-min_x) << endl;
-    hscan << "voxels number transaxial: 100" << endl;
-    hscan << "voxels number axial: 100" << endl;
-    hscan << "field of view transaxial: " << max(max_y-min_y,max_x-min_x) << endl;
-    hscan << "field of view axial: " << max_z-min_z << endl;
-    hscan << "mean depth of interaction: -1" << endl;
-    hscan << "######################################################" << endl;
-    hscan << "# The following lines are irrelevant because cannot be" << endl;
-    hscan << "# known from the petsird file but required by castor" << endl;
-    hscan << "######################################################" << endl;
-    hscan << "crystals size depth: 0." << endl;
-    hscan << "number of rings in scanner: 1" << endl;
-    hscan << "number of layers: 1" << endl;
-    hscan << "number of crystals in layer: " << flat_index << endl;
-    hscan.close();
+//   // Close scanner LUT file
+//   if (flag_write)
+//   {
+//     fclose(flut);
+//     // Check for accurate writing
+//     if (nb_data_written_in_lut != flat_index * 6)
+//     {
+//         cerr << "***** Failed to write all data in scanner LUT file !" << endl;
+//         return 1;
+//     }
+//     // Verbose
+//     if (verbose>1) cout << "--> CASToR scanner LUT file '" << scanner_name << ".lut' written" << endl;
+//   }
+//   // Write scanner header
+//   if (flag_write)
+//   {
+//     string scanner_hscan_file = scanner_name + ".hscan";
+//     ofstream hscan(scanner_hscan_file.c_str());
+//     if (!hscan)
+//     {
+//       cerr << "***** Failed to open scanner header file '" << scanner_hscan_file << "' for writing !" << endl;
+//       exit(1);
+//     }
+//     hscan << "modality: PET" << endl;
+//     hscan << "number of elements: " << flat_index << endl;
+//     hscan << "scanner radius: " << max(max_y-min_y,max_x-min_x) << endl;
+//     hscan << "voxels number transaxial: 100" << endl;
+//     hscan << "voxels number axial: 100" << endl;
+//     hscan << "field of view transaxial: " << max(max_y-min_y,max_x-min_x) << endl;
+//     hscan << "field of view axial: " << max_z-min_z << endl;
+//     hscan << "mean depth of interaction: -1" << endl;
+//     hscan << "######################################################" << endl;
+//     hscan << "# The following lines are irrelevant because cannot be" << endl;
+//     hscan << "# known from the petsird file but required by castor" << endl;
+//     hscan << "######################################################" << endl;
+//     hscan << "crystals size depth: 0." << endl;
+//     hscan << "number of rings in scanner: 1" << endl;
+//     hscan << "number of layers: 1" << endl;
+//     hscan << "number of crystals in layer: " << flat_index << endl;
+//     hscan.close();
 
-    // Verbose
-    if (verbose>1) cout << "--> CASToR scanner header file '" << scanner_hscan_file << "' written" << endl;
-  }
+//     // Verbose
+//     if (verbose>1) cout << "--> CASToR scanner header file '" << scanner_hscan_file << "' written" << endl;
+//   }
 
-  // -------------------------------------------------------------------------------
-  // -------------------------------------------------------------------------------
-  // -------------------------------------------------------------------------------
-  // -------------------------------------------------------------------------------
-  // -------------------------------------------------------------------------------
-  // -------------------------------------------------------------------------------
+//   // -------------------------------------------------------------------------------
+//   // -------------------------------------------------------------------------------
+//   // -------------------------------------------------------------------------------
+//   // -------------------------------------------------------------------------------
+//   // -------------------------------------------------------------------------------
+//   // -------------------------------------------------------------------------------
 
-  // Flag for going into normalization components
-  if (flag_norm)
-  {
-    // Verbose
-    if (verbose>1) cout << "====================================================" << endl;
-    if (verbose>0) cout << "==  Going through normalization components" << endl;
-    if (verbose>1) cout << "====================================================" << endl;
+//   // Flag for going into normalization components
+//   if (flag_norm)
+//   {
+//     // Verbose
+//     if (verbose>1) cout << "====================================================" << endl;
+//     if (verbose>0) cout << "==  Going through normalization components" << endl;
+//     if (verbose>1) cout << "====================================================" << endl;
 
-    // Open castor normalization file
-    string castor_norm_file = output_base_name + "_norm.cdf";
-    FILE* fnorm = NULL;
-    if (flag_write)
-    {
-      fnorm = fopen(castor_norm_file.c_str(), "wb");
-      if (fnorm==NULL)
-      {
-        cerr << "***** Failed to create output CASToR normalization file '" << castor_norm_file << "' !" << endl;
-        exit(1);
-      }
-    }
-    uint64_t nb_data_written_in_norm = 0;
-    uint64_t nb_valid_lors = 0;
-    uint64_t size_of_a_norm_lor = 3;
+//     // Open castor normalization file
+//     string castor_norm_file = output_base_name + "_norm.cdf";
+//     FILE* fnorm = NULL;
+//     if (flag_write)
+//     {
+//       fnorm = fopen(castor_norm_file.c_str(), "wb");
+//       if (fnorm==NULL)
+//       {
+//         cerr << "***** Failed to create output CASToR normalization file '" << castor_norm_file << "' !" << endl;
+//         exit(1);
+//       }
+//     }
+//     uint64_t nb_data_written_in_norm = 0;
+//     uint64_t nb_valid_lors = 0;
+//     uint64_t size_of_a_norm_lor = 3;
 
-    // Start a double loop over the detector elements with duplicates
-    if (verbose>1) cout << "--> Loop over all possible detector elements pairs" << endl;
-    for (uint32_t id1=0; id1<flat_index; id1++)
-    {
-      for (uint32_t id2=id1+1; id2<flat_index; id2++)
-      {
-        // Get the detection efficiency for this detector pair (TODO: manage energies)
-        float eff = get_detection_efficiency( header.scanner, id1, id2, 0, 0 );
-        // Verbose
-        if (verbose>2) cout << "  --> Pair [ " << id1 << " ; " << id2 << " ] efficiency is " << eff << endl << flush;
-	if (verbose>4)
-	{
-          cout << "    | Press enter to continue" << endl;
-          getchar();
-	}
-        // Consider the LOR valid only if efficiency is strictly positive
-        if (eff>0.)
-        {
-          // Compute normalization factor as the inverse of efficiency
-          float norm = 1. / eff;
-          // Write data
-	  if (flag_write)
-	  {
-            nb_data_written_in_norm += fwrite(&norm,sizeof(float),1,fnorm);
-            nb_data_written_in_norm += fwrite(&id1,sizeof(uint32_t),1,fnorm);
-            nb_data_written_in_norm += fwrite(&id2,sizeof(uint32_t),1,fnorm);
-	  }
-          // Increment the number of valid lors
-          nb_valid_lors++;
-        }
-      }
-    }
+//     // Start a double loop over the detector elements with duplicates
+//     if (verbose>1) cout << "--> Loop over all possible detector elements pairs" << endl;
+//     for (uint32_t id1=0; id1<flat_index; id1++)
+//     {
+//       for (uint32_t id2=id1+1; id2<flat_index; id2++)
+//       {
+//         // Get the detection efficiency for this detector pair (TODO: manage energies)
+//         float eff = get_detection_efficiency( header.scanner, id1, id2, 0, 0 );
+//         // Verbose
+//         if (verbose>2) cout << "  --> Pair [ " << id1 << " ; " << id2 << " ] efficiency is " << eff << endl << flush;
+// 	if (verbose>4)
+// 	{
+//           cout << "    | Press enter to continue" << endl;
+//           getchar();
+// 	}
+//         // Consider the LOR valid only if efficiency is strictly positive
+//         if (eff>0.)
+//         {
+//           // Compute normalization factor as the inverse of efficiency
+//           float norm = 1. / eff;
+//           // Write data
+// 	  if (flag_write)
+// 	  {
+//             nb_data_written_in_norm += fwrite(&norm,sizeof(float),1,fnorm);
+//             nb_data_written_in_norm += fwrite(&id1,sizeof(uint32_t),1,fnorm);
+//             nb_data_written_in_norm += fwrite(&id2,sizeof(uint32_t),1,fnorm);
+// 	  }
+//           // Increment the number of valid lors
+//           nb_valid_lors++;
+//         }
+//       }
+//     }
 
-    // Verbose
-    if (verbose>1) cout << "--> Number of valid LORs: " << nb_valid_lors << endl;
+//     // Verbose
+//     if (verbose>1) cout << "--> Number of valid LORs: " << nb_valid_lors << endl;
 
-    // Close CASToR norm file
-    if (flag_write)
-    {
-      fclose(fnorm);
-      if (nb_data_written_in_norm!=nb_valid_lors*size_of_a_norm_lor)
-      {
-        cerr << "***** Failed to write all data into CASToR normalization file !" << endl;
-        exit(1);
-      }
-      if (verbose>1) cout << "--> CASToR normalization file '" << castor_norm_file << "' written" << endl;
-    }
+//     // Close CASToR norm file
+//     if (flag_write)
+//     {
+//       fclose(fnorm);
+//       if (nb_data_written_in_norm!=nb_valid_lors*size_of_a_norm_lor)
+//       {
+//         cerr << "***** Failed to write all data into CASToR normalization file !" << endl;
+//         exit(1);
+//       }
+//       if (verbose>1) cout << "--> CASToR normalization file '" << castor_norm_file << "' written" << endl;
+//     }
 
-    // Write castor header file
-    if (flag_write)
-    {
-      string castor_hnorm_file = output_base_name + "_norm.cdh";
-      ofstream cdhn(castor_hnorm_file.c_str());
-      if (!cdhn)
-      {
-        cerr << "***** Failed to create castor normalization header file '" << castor_hnorm_file << "' for writing !" << endl;
-        exit(1);
-      }
-      cdhn << "Scanner name: " << scanner_name << endl;
-      cdhn << "Data filename: " << castor_norm_file << endl;
-      cdhn << "Number of events: " << nb_valid_lors << endl;
-      cdhn << "Data mode: normalization" << endl;
-      cdhn << "Data type: PET" << endl;
-      cdhn << "Start time (s): 0" << endl;
-      cdhn << "Duration (s): 1" << endl;
-      cdhn << "Normalization correction flag: 1" << endl;
-      cdhn.close();
-      // Verbose
-      if (verbose>1) cout << "--> CASToR normalization header file '" << castor_hnorm_file << "' written" << endl;
-    }
+//     // Write castor header file
+//     if (flag_write)
+//     {
+//       string castor_hnorm_file = output_base_name + "_norm.cdh";
+//       ofstream cdhn(castor_hnorm_file.c_str());
+//       if (!cdhn)
+//       {
+//         cerr << "***** Failed to create castor normalization header file '" << castor_hnorm_file << "' for writing !" << endl;
+//         exit(1);
+//       }
+//       cdhn << "Scanner name: " << scanner_name << endl;
+//       cdhn << "Data filename: " << castor_norm_file << endl;
+//       cdhn << "Number of events: " << nb_valid_lors << endl;
+//       cdhn << "Data mode: normalization" << endl;
+//       cdhn << "Data type: PET" << endl;
+//       cdhn << "Start time (s): 0" << endl;
+//       cdhn << "Duration (s): 1" << endl;
+//       cdhn << "Normalization correction flag: 1" << endl;
+//       cdhn.close();
+//       // Verbose
+//       if (verbose>1) cout << "--> CASToR normalization header file '" << castor_hnorm_file << "' written" << endl;
+//     }
 
-  // End if going through normalization components
-  }
+//   // End if going through normalization components
+//   }
 
-  // -------------------------------------------------------------------------------
-  // -------------------------------------------------------------------------------
-  // -------------------------------------------------------------------------------
-  // -------------------------------------------------------------------------------
-  // -------------------------------------------------------------------------------
-  // -------------------------------------------------------------------------------
+//   // -------------------------------------------------------------------------------
+//   // -------------------------------------------------------------------------------
+//   // -------------------------------------------------------------------------------
+//   // -------------------------------------------------------------------------------
+//   // -------------------------------------------------------------------------------
+//   // -------------------------------------------------------------------------------
 
-  // Flag for going through listmode data
-  if (flag_list)
-  {
-    // Verbose
-    if (verbose>1) cout << "====================================================" << endl;
-    if (verbose>0) cout << "==  Processing PETSIRD listmode data" << endl;
-    if (verbose>1) cout << "====================================================" << endl;
+//   // Flag for going through listmode data
+//   if (flag_list)
+//   {
+//     // Verbose
+//     if (verbose>1) cout << "====================================================" << endl;
+//     if (verbose>0) cout << "==  Processing PETSIRD listmode data" << endl;
+//     if (verbose>1) cout << "====================================================" << endl;
 
-    // ---------------------------
-    // TOF management
-    // ---------------------------
-    bool tof_enable = false;
-    double speed_of_light_in_mm_per_ps = 0.299792458;
-    double tof_measurement_range_in_ps = -1.;
-    double tof_resolution_in_ps = -1.;
-    bool tof_quantization = true;
-    double tof_quantization_bin_size_in_ps = -1.;
-    // If more than one TOF bin, then we assume TOF is enable
-    int header_scanner_NumberOfTOFBins = 1;
-    for (int rm1=0; rm1<header.scanner.scanner_geometry.NumberOfReplicatedModules(); rm1++)
-    {
-      // Since they are symetric?
-      for (int rm2=rm1; rm2<header.scanner.scanner_geometry.NumberOfReplicatedModules(); rm2++)
-      {
-        int current_NumberOfTOFBins = header.scanner.tof_bin_edges[rm1][rm2].NumberOfBins();
-        if (current_NumberOfTOFBins > header_scanner_NumberOfTOFBins)
-        {
-          header_scanner_NumberOfTOFBins = current_NumberOfTOFBins;
-        }
-      }
-    }
+//     // ---------------------------
+//     // TOF management
+//     // ---------------------------
+//     bool tof_enable = false;
+//     double speed_of_light_in_mm_per_ps = 0.299792458;
+//     double tof_measurement_range_in_ps = -1.;
+//     double tof_resolution_in_ps = -1.;
+//     bool tof_quantization = true;
+//     double tof_quantization_bin_size_in_ps = -1.;
+//     // If more than one TOF bin, then we assume TOF is enable
+//     int header_scanner_NumberOfTOFBins = 1;
+//     for (int rm1=0; rm1<header.scanner.scanner_geometry.NumberOfReplicatedModules(); rm1++)
+//     {
+//       // Since they are symetric?
+//       for (int rm2=rm1; rm2<header.scanner.scanner_geometry.NumberOfReplicatedModules(); rm2++)
+//       {
+//         int current_NumberOfTOFBins = header.scanner.tof_bin_edges[rm1][rm2].NumberOfBins();
+//         if (current_NumberOfTOFBins > header_scanner_NumberOfTOFBins)
+//         {
+//           header_scanner_NumberOfTOFBins = current_NumberOfTOFBins;
+//         }
+//       }
+//     }
 
-    if (header_scanner_NumberOfTOFBins!=1)
-    {
-      // IMPORTANT NOTE: CASToR works in the following way wrt TOF. For histogram/sinogram,
-      // the TOF bin size is unique. For listmode data, the measurement is supposed to be a
-      // value which can or cannot by quantized. If quantized, then, the quantization bin
-      // size can be supplied in the header of the datafile which can be taken into account
-      // in the projector. For the conversion of PETSIRD to CASToR data, we will use this
-      // quantization bin size as the PETSIRD bin size. Then, each event will be affected
-      // by a value at the middle of the associated TOF bin. The quantization bin size is
-      // supposed to be fixed in CASToR, so we check for the standard deviation of the
-      // PETSIRD TOF bin sizes to decide if the hypothesis holds or not, based on a
-      // threshold value that can be adjusted below. This threshold should not be zero to
-      // avoid numerical rounding problems. In case the PETSIRD data use varying TOF bin
-      // size, a workaround could be used by not providing the quantization bin size in
-      // CASToR. That way, CASToR will assume that TOF measurements provided for each event
-      // are continuous, so the projector will simply use a Gaussian function centered on
-      // the measurement to model the TOF function. This is what is implemented below but
-      // we still throw a warning to warn the user.
-      tof_enable = true;
-      // TOF resolution in ps (needed by castor)
-      tof_resolution_in_ps = header.scanner.tof_resolution * 2. / speed_of_light_in_mm_per_ps;
-      // Verbose
-      if (verbose>1)
-      {
-        cout << "--> TOF FWHM resolution: " << header.scanner.tof_resolution << " mm (" << tof_resolution_in_ps << " ps)" << endl;
-        cout << "--> Number of TOF bins: " << header_scanner_NumberOfTOFBins << endl;
-        cout << "--> PETSIRD TOF bin edges: " << header.scanner.tof_bin_edges << endl;
-      }
-      // Compute mean TOF bin size in mm from petsird header values
-      double mean_tof_bin_size_in_mm = 0.;
-      for (uint32_t tb=0; tb<header_scanner_NumberOfTOFBins; tb++)
-        mean_tof_bin_size_in_mm += header.scanner.tof_bin_edges[tb+1] - header.scanner.tof_bin_edges[tb];
-      mean_tof_bin_size_in_mm /= ((double)(header_scanner_NumberOfTOFBins));
-      // Compute standard deviation of the TOF bin size
-      double stdv_tof_bin_size_in_mm = 0.;
-      for (uint32_t tb=0; tb<header_scanner_NumberOfTOFBins; tb++)
-        stdv_tof_bin_size_in_mm += pow((mean_tof_bin_size_in_mm - header.scanner.tof_bin_edges[tb+1] + header.scanner.tof_bin_edges[tb]) , 2.);
-      stdv_tof_bin_size_in_mm /= ((double)(header_scanner_NumberOfTOFBins));
-      // Check hypothesis that the TOF bin size is fixed
-      double difference_in_tof_bin_size_tolerance_in_percent = 0.1;
-      if (100. * stdv_tof_bin_size_in_mm / mean_tof_bin_size_in_mm > difference_in_tof_bin_size_tolerance_in_percent)
-      {
-        // TOF bin size not fixed: see note above
-        cerr << "!!!!! TOF bin size of PETSIRD data has been detected to be variable whereas CASToR currently only works with fixed bin size." << endl;
-        cerr << "!!!!! The measurement of the TOF for each event will thus be assumed to be continuous and the value provided will be the one" << endl;
-        cerr << "!!!!! at the center of the TOF bin. For more information, see the CASToR TOF related documentation or the technical note by" << endl;
-        cerr << "!!!!! Filipovic et al, Phys Med Biol, 2019: 'Time-of-flight (TOF) implementation for PET reconstruction in practice'." << endl;
-        // Measurements assumed to be continuous as opposed to quantized
-        tof_quantization = false;
-      }
-      else
-      {
-        // Affect the CASToR quantization bin size as the mean TOF bin size from PETSIRD data
-        tof_quantization_bin_size_in_ps = mean_tof_bin_size_in_mm * 2. / speed_of_light_in_mm_per_ps;
-        // Verbose
-        if (verbose>1) cout << "--> CASToR quantization bin size: " << tof_quantization_bin_size_in_ps << " ps" << endl;
-      }
-      // Compute the range of TOF measurements for CASToR
-      tof_measurement_range_in_ps = ( header.scanner.tof_bin_edges[header_scanner_NumberOfTOFBins] - header.scanner.tof_bin_edges[0] )
-                                  * 2. / speed_of_light_in_mm_per_ps;
-      // Verbose
-      if (verbose>1) cout << "--> CASToR TOF measurement range: " << tof_measurement_range_in_ps << " ps" << endl;
-    }
+//     if (header_scanner_NumberOfTOFBins!=1)
+//     {
+//       // IMPORTANT NOTE: CASToR works in the following way wrt TOF. For histogram/sinogram,
+//       // the TOF bin size is unique. For listmode data, the measurement is supposed to be a
+//       // value which can or cannot by quantized. If quantized, then, the quantization bin
+//       // size can be supplied in the header of the datafile which can be taken into account
+//       // in the projector. For the conversion of PETSIRD to CASToR data, we will use this
+//       // quantization bin size as the PETSIRD bin size. Then, each event will be affected
+//       // by a value at the middle of the associated TOF bin. The quantization bin size is
+//       // supposed to be fixed in CASToR, so we check for the standard deviation of the
+//       // PETSIRD TOF bin sizes to decide if the hypothesis holds or not, based on a
+//       // threshold value that can be adjusted below. This threshold should not be zero to
+//       // avoid numerical rounding problems. In case the PETSIRD data use varying TOF bin
+//       // size, a workaround could be used by not providing the quantization bin size in
+//       // CASToR. That way, CASToR will assume that TOF measurements provided for each event
+//       // are continuous, so the projector will simply use a Gaussian function centered on
+//       // the measurement to model the TOF function. This is what is implemented below but
+//       // we still throw a warning to warn the user.
+//       tof_enable = true;
+//       // TOF resolution in ps (needed by castor)
+//       tof_resolution_in_ps = header.scanner.tof_resolution * 2. / speed_of_light_in_mm_per_ps;
+//       // Verbose
+//       if (verbose>1)
+//       {
+//         cout << "--> TOF FWHM resolution: " << header.scanner.tof_resolution << " mm (" << tof_resolution_in_ps << " ps)" << endl;
+//         cout << "--> Number of TOF bins: " << header_scanner_NumberOfTOFBins << endl;
+//         cout << "--> PETSIRD TOF bin edges: " << header.scanner.tof_bin_edges << endl;
+//       }
+//       // Compute mean TOF bin size in mm from petsird header values
+//       double mean_tof_bin_size_in_mm = 0.;
+//       for (uint32_t tb=0; tb<header_scanner_NumberOfTOFBins; tb++)
+//         mean_tof_bin_size_in_mm += header.scanner.tof_bin_edges[tb+1] - header.scanner.tof_bin_edges[tb];
+//       mean_tof_bin_size_in_mm /= ((double)(header_scanner_NumberOfTOFBins));
+//       // Compute standard deviation of the TOF bin size
+//       double stdv_tof_bin_size_in_mm = 0.;
+//       for (uint32_t tb=0; tb<header_scanner_NumberOfTOFBins; tb++)
+//         stdv_tof_bin_size_in_mm += pow((mean_tof_bin_size_in_mm - header.scanner.tof_bin_edges[tb+1] + header.scanner.tof_bin_edges[tb]) , 2.);
+//       stdv_tof_bin_size_in_mm /= ((double)(header_scanner_NumberOfTOFBins));
+//       // Check hypothesis that the TOF bin size is fixed
+//       double difference_in_tof_bin_size_tolerance_in_percent = 0.1;
+//       if (100. * stdv_tof_bin_size_in_mm / mean_tof_bin_size_in_mm > difference_in_tof_bin_size_tolerance_in_percent)
+//       {
+//         // TOF bin size not fixed: see note above
+//         cerr << "!!!!! TOF bin size of PETSIRD data has been detected to be variable whereas CASToR currently only works with fixed bin size." << endl;
+//         cerr << "!!!!! The measurement of the TOF for each event will thus be assumed to be continuous and the value provided will be the one" << endl;
+//         cerr << "!!!!! at the center of the TOF bin. For more information, see the CASToR TOF related documentation or the technical note by" << endl;
+//         cerr << "!!!!! Filipovic et al, Phys Med Biol, 2019: 'Time-of-flight (TOF) implementation for PET reconstruction in practice'." << endl;
+//         // Measurements assumed to be continuous as opposed to quantized
+//         tof_quantization = false;
+//       }
+//       else
+//       {
+//         // Affect the CASToR quantization bin size as the mean TOF bin size from PETSIRD data
+//         tof_quantization_bin_size_in_ps = mean_tof_bin_size_in_mm * 2. / speed_of_light_in_mm_per_ps;
+//         // Verbose
+//         if (verbose>1) cout << "--> CASToR quantization bin size: " << tof_quantization_bin_size_in_ps << " ps" << endl;
+//       }
+//       // Compute the range of TOF measurements for CASToR
+//       tof_measurement_range_in_ps = ( header.scanner.tof_bin_edges[header_scanner_NumberOfTOFBins] - header.scanner.tof_bin_edges[0] )
+//                                   * 2. / speed_of_light_in_mm_per_ps;
+//       // Verbose
+//       if (verbose>1) cout << "--> CASToR TOF measurement range: " << tof_measurement_range_in_ps << " ps" << endl;
+//     }
 
-    // Get TOF and energy info
-    const auto& energy_bin_edges = header.scanner.event_energy_bin_edges;
-    const auto energy_mid_points = (   xt::view(energy_bin_edges, xt::range(0, energy_bin_edges.size() - 1))
-                                     + xt::view(energy_bin_edges, xt::range(1, energy_bin_edges.size()))  )
-                                   / 2;
+//     // Get TOF and energy info
+//     const auto& energy_bin_edges = header.scanner.event_energy_bin_edges;
+//     const auto energy_mid_points = (   xt::view(energy_bin_edges, xt::range(0, energy_bin_edges.size() - 1))
+//                                      + xt::view(energy_bin_edges, xt::range(1, energy_bin_edges.size()))  )
+//                                    / 2;
 
-    // Verbose
-    if (verbose>1)
-    {
-      int header_scanner_NumberOfEnergyBins = 1; // zxc
-      cout << "--> Number of energy bins: " << header_scanner_NumberOfEnergyBins << endl;
-      cout << "--> Energy bin edges: " << energy_bin_edges << endl;
-      cout << "--> Energy mid points: " << energy_mid_points << endl;
-    }
+//     // Verbose
+//     if (verbose>1)
+//     {
+//       int header_scanner_NumberOfEnergyBins = 1; // zxc
+//       cout << "--> Number of energy bins: " << header_scanner_NumberOfEnergyBins << endl;
+//       cout << "--> Energy bin edges: " << energy_bin_edges << endl;
+//       cout << "--> Energy mid points: " << energy_mid_points << endl;
+//     }
 
-    // Process events by time blocks
-    float energy_1 = 0, energy_2 = 0;
-    std::size_t num_prompts = 0;
-    float last_time = 0.F;
-    petsird::TimeBlock time_block;
-    uint32_t time_block_index = 0;
+//     // Process events by time blocks
+//     float energy_1 = 0, energy_2 = 0;
+//     std::size_t num_prompts = 0;
+//     float last_time = 0.F;
+//     petsird::TimeBlock time_block;
+//     uint32_t time_block_index = 0;
 
-    // Open castor data file
-    string castor_data_file = output_base_name + ".cdf";
-    FILE* fcastor = NULL;
-    if (flag_write)
-    {
-      fcastor = fopen(castor_data_file.c_str(), "wb");
-      if (fcastor==NULL)
-      {
-        cerr << "***** Failed to create output CASToR data file '" << castor_data_file << "' !" << endl;
-        exit(1);
-      }
-    }
-    int nb_data_written = 0;
-    int nb_events = 0;
+//     // Open castor data file
+//     string castor_data_file = output_base_name + ".cdf";
+//     FILE* fcastor = NULL;
+//     if (flag_write)
+//     {
+//       fcastor = fopen(castor_data_file.c_str(), "wb");
+//       if (fcastor==NULL)
+//       {
+//         cerr << "***** Failed to create output CASToR data file '" << castor_data_file << "' !" << endl;
+//         exit(1);
+//       }
+//     }
+//     int nb_data_written = 0;
+//     int nb_events = 0;
 
 //     // Loop on time blocks
 //     if (verbose>1) cout << "--> Processing time blocks" << endl;
@@ -910,45 +910,45 @@ int main(int argc, char** argv)
 //       }
 //     }
 
-    // Verbose
-    if (verbose>1) cout << "--> Number of events: " << nb_events << endl;
+//     // Verbose
+//     if (verbose>1) cout << "--> Number of events: " << nb_events << endl;
 
-    // Close castor datafile
-    if (flag_write)
-    {
-      fclose(fcastor);
-      if (nb_data_written != nb_events * 3)
-      {
-          cerr << "***** Failed to write all data in castor data file !" << endl;
-          return 1;
-      }
-      if (verbose>1) cout << "--> CASToR datafile '" << castor_data_file << "' written" << endl;
-    }
-    // Write castor header file
-    if (flag_write)
-    {
-      string castor_header_file = output_base_name + ".cdh";
-      ofstream cdh(castor_header_file.c_str());
-      if (!cdh)
-      {
-        cerr << "***** Failed to create castor header file '" << castor_header_file << "' for writing !" << endl;
-        exit(1);
-      }
-      cdh << "Scanner name: " << scanner_name << endl;
-      cdh << "Data filename: " << castor_data_file << endl;
-      cdh << "Number of events: " << nb_events << endl;
-      cdh << "Data mode: listmode" << endl;
-      cdh << "Data type: PET" << endl;
-      cdh << "Start time (s): 0" << endl;
-      cdh << "Duration (s): 1" << endl;
-      // TODO: time management
-      cdh.close();
-      // Verbose
-      if (verbose>1) cout << "--> CASToR header file '" << castor_header_file << "' written" << endl;
-    }
+//     // Close castor datafile
+//     if (flag_write)
+//     {
+//       fclose(fcastor);
+//       if (nb_data_written != nb_events * 3)
+//       {
+//           cerr << "***** Failed to write all data in castor data file !" << endl;
+//           return 1;
+//       }
+//       if (verbose>1) cout << "--> CASToR datafile '" << castor_data_file << "' written" << endl;
+//     }
+//     // Write castor header file
+//     if (flag_write)
+//     {
+//       string castor_header_file = output_base_name + ".cdh";
+//       ofstream cdh(castor_header_file.c_str());
+//       if (!cdh)
+//       {
+//         cerr << "***** Failed to create castor header file '" << castor_header_file << "' for writing !" << endl;
+//         exit(1);
+//       }
+//       cdh << "Scanner name: " << scanner_name << endl;
+//       cdh << "Data filename: " << castor_data_file << endl;
+//       cdh << "Number of events: " << nb_events << endl;
+//       cdh << "Data mode: listmode" << endl;
+//       cdh << "Data type: PET" << endl;
+//       cdh << "Start time (s): 0" << endl;
+//       cdh << "Duration (s): 1" << endl;
+//       // TODO: time management
+//       cdh.close();
+//       // Verbose
+//       if (verbose>1) cout << "--> CASToR header file '" << castor_header_file << "' written" << endl;
+//     }
 
-  // End if going through listmode data
-  }
+//   // End if going through listmode data
+//   }
 
   // End
   return 0;
