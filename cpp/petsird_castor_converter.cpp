@@ -394,20 +394,22 @@ int main(int argc, char** argv)
   }
 
   // Need a zero coordinate
+  // zxc not used?
   petsird::Coordinate zero_coord;
   zero_coord.c[0] = 0.;
   zero_coord.c[1] = 0.;
   zero_coord.c[2] = 0.;
 
   // Declare the maps to get from petsird 4 IDs to CASToR flatenned ID
+  // zxc Now it is three? Type Module, module instances, detector instance?
   map<tuple<uint32_t, uint32_t, uint32_t, uint32_t>, uint32_t> map_petsird2castor_id;
   map<uint32_t, tuple<uint32_t, uint32_t, uint32_t, uint32_t>> map_castor2petsird_id;
 
   // The table to get castor ids from petsird ids
   int nb_detectors_in_scanner = 0;
-  for (int rm=0; rm<header.scanner.scanner_geometry.NumberOfReplicatedModules(); rm++)
+  for (int tm=0; tm<header.scanner.scanner_geometry.NumberOfReplicatedModules(); tm++)
   {
-    nb_detectors_in_scanner += petsird_helpers::get_num_det_els(header.scanner, rm);
+    nb_detectors_in_scanner += petsird_helpers::get_num_det_els(header.scanner, tm);
   }
   if (verbose>1) cout << "--> Number of detector in scanner : " << nb_detectors_in_scanner << endl;
   uint32_t**** table_petsird2castor_id = (uint32_t****)malloc(nb_detectors_in_scanner * sizeof(uint32_t***));
@@ -416,7 +418,9 @@ int main(int argc, char** argv)
   // We initialize the values with the centroid position of the first detecting element
 
   // zxc Noy sure of that...
-  auto coord_init = compute_centroid_BoxShape(petsird_helpers::geometry::get_detecting_box(header.scanner, 0, 0));
+  const petsird::TypeOfModule type_of_module{ 0 };
+  const petsird::DetectionBin detection_bin{ 0 };
+  auto coord_init = compute_centroid_BoxShape(petsird_helpers::geometry::get_detecting_box(header.scanner, type_of_module, detection_bin));
   float min_x = coord_init.c[0];
   float min_y = coord_init.c[1];
   float min_z = coord_init.c[2];
@@ -428,107 +432,128 @@ int main(int argc, char** argv)
   double center_y = 0.;
   double center_z = 0.;
 
-//   // Loop over the lists of replicates module (top level in the scanner geomety)
-//   if (verbose>1) cout << "--> Processing scanner elements" << endl;
-//   uint32_t flat_index = 0;
-//   for (uint32_t ml=0; ml<header.scanner.scanner_geometry.ids.size(); ml++)
-//   {
-//     if (verbose>2) cout << "  --> Replicated module list #" << header.scanner.scanner_geometry.ids[ml] << endl;
-//     // Get the module associated to this list
-//     const auto& rep_module = header.scanner.scanner_geometry.replicated_modules[ml];
-//     // Allocate the table of ids
-//     table_petsird2castor_id[ml] = (uint32_t***)malloc(rep_module.transforms.size()*sizeof(uint32_t**));
-//     // Loop over the transforms associated to the replicated module
-//     for (uint32_t mtr=0; mtr<rep_module.transforms.size(); mtr++)
-//     {
-//       if (verbose>2) cout << "    --> Module #" << rep_module.ids[mtr] << endl;
-//       // Get the transform associated to this module
-//       const auto& mod_transform = rep_module.transforms[mtr];
-//       // Allocate the table of ids
-//       table_petsird2castor_id[ml][mtr] = (uint32_t**)malloc(rep_module.object.detecting_element_ids.size()*sizeof(uint32_t*));
-//       // Loop over the lists of replicated detector elements
-//       for (uint32_t dl=0; dl<rep_module.object.detecting_element_ids.size(); dl++)
-//       {
-//         if (verbose>2) cout << "      --> Replicated detector list #" << rep_module.object.detecting_element_ids[dl] << endl;
-//         // Get the replicated detector element associated to this list
-//         const auto& rep_volume = rep_module.object.detecting_elements[dl];
-//         // Get the box shape
-// 	/////////////////////////////////////////////////////////////////
-// 	// NICOLAS: For normal reading, leave the first line uncommented.
-// 	// To apply a shift, comment the first line and uncomment the two
-// 	// following lines. The shift can be changed in the function
-// 	// translate_BoxShape. It is currently +1.6 over Y and Z.
-// 	// The shift applied here is only applied on the reference volume
-// 	// that is then transformed using the transformations as read from
-// 	// the petsird file.
-//         const auto& box_shape = rep_volume.object.shape;
-//         //const auto& box_shape_orig = rep_volume.object.shape;
-// 	//const auto& box_shape = translate_BoxShape(box_shape_orig);
-// 	/////////////////////////////////////////////////////////////////
-//         // Compute centroid
-//         if (verbose>3)
-//         {
-//           const auto& orig_centroid = compute_centroid_BoxShape(box_shape);
-//           cout << "        | Original detecting element centroid #" << flat_index << " [" << orig_centroid.c[0] << "; " << orig_centroid.c[1] << "; " << orig_centroid.c[2] << "]" << endl;
-//         }
-//         // Allocate the table of ids
-//         table_petsird2castor_id[ml][mtr][dl] = (uint32_t*)malloc(rep_volume.transforms.size()*sizeof(uint32_t));
-//         // Loop over the transforms associated to the replicated volume
-//         for (uint32_t dtr=0; dtr<rep_volume.transforms.size(); dtr++)
-//         {
-//           if (verbose>2) cout << "        --> Volume #" << rep_volume.ids[dtr] << endl;
-//           // Get the transform associated to this volume
-//           const auto& vol_transform = rep_volume.transforms[dtr];
-//           // Apply transformations on the box
-//           const auto& transformed_box_shape = transform_BoxShape(box_shape, vol_transform, mod_transform);
-//           // Compute centroid
-//           const auto& centroid = compute_centroid_BoxShape(transformed_box_shape);
-//           // Verbose
-//           if (verbose>2)
-//           {
-//             cout << "          | Detector id: " << flat_index << " | PETSIRD detector ids [ " << ml << " ; " << mtr << " ; " << dl << " ; " << dtr << " ]" << endl;
-//             cout << "          | Centroid [" << centroid.c[0] << "; " << centroid.c[1] << "; " << centroid.c[2] << "] mm" << endl;
-//           }
-// 	  if (verbose>4)
-// 	  {
-//             cout << "          | Press enter to continue" << endl;
-//             getchar();
-// 	  }
-//           // Write centroid into the CASToR LUT file
-// 	  if (flag_write)
-// 	  {
-//             // This is the centroid of the detecting element
-//             nb_data_written_in_lut += fwrite(&(centroid.c[0]), sizeof(float), 1, flut);
-//             nb_data_written_in_lut += fwrite(&(centroid.c[1]), sizeof(float), 1, flut);
-//             nb_data_written_in_lut += fwrite(&(centroid.c[2]), sizeof(float), 1, flut);
-// 	    // The orientation vector is set to zero for now
-//             float zero = 0.;
-//             nb_data_written_in_lut += fwrite(&zero, sizeof(float), 1, flut);
-//             nb_data_written_in_lut += fwrite(&zero, sizeof(float), 1, flut);
-//             nb_data_written_in_lut += fwrite(&zero, sizeof(float), 1, flut);
-// 	  }
-//           // Add the indices to the map
-//           tuple<uint32_t, uint32_t, uint32_t, uint32_t> petsird_ids = tuple(ml, mtr, dl, dtr);
-//           map_petsird2castor_id.insert({ petsird_ids, flat_index });
-//           map_castor2petsird_id.insert({ flat_index, petsird_ids });
-//           table_petsird2castor_id[ml][mtr][dl][dtr] = flat_index;
-//           // Increment the flat index
-//           flat_index++;
-//           // Update min/max x,y,z
-//           if (centroid.c[0]<min_x) min_x = centroid.c[0];
-//           if (centroid.c[1]<min_y) min_y = centroid.c[1];
-//           if (centroid.c[2]<min_z) min_z = centroid.c[2];
-//           if (centroid.c[0]>max_x) max_x = centroid.c[0];
-//           if (centroid.c[1]>max_y) max_y = centroid.c[1];
-//           if (centroid.c[2]>max_z) max_z = centroid.c[2];
-// 	  // Update center of mass
-// 	  center_x += ((double)(centroid.c[0]));
-// 	  center_y += ((double)(centroid.c[1]));
-// 	  center_z += ((double)(centroid.c[2]));
-//         }
-//       }
-//     }
-//   }
+  // Loop over the lists of replicates module (top level in the scanner geomety)
+  if (verbose>1) cout << "--> Processing scanner elements" << endl;
+  uint32_t flat_index = 0;
+  petsird::ExpandedDetectionBin detection_bin;
+  // Unsure if init is needed
+  detection_bin.energy_index = 0;
+  for (int typeMod=0; typeMod<header.scanner.scanner_geometry.NumberOfReplicatedModules(); typeMod++)
+  {
+    auto& rep_module = scanner.scanner_geometry.replicated_modules[tm];
+    auto& det_els = rep_module.object.detecting_elements;
+    for (int repMod=0; repMod<rep_module.transforms.size(); repMod++)
+    {
+      detection_bin.module_index = repMod;
+      for (int detEl=0; detEl<det_els.transforms.size(); detEl++)
+      {
+        detection_bin.module_index = detEl;
+        // zxc typeMod Should be object? Seems ok in ana
+        petsird_helpers::geometry::get_detecting_box(header.scanner, typeMod, detection_bin)
+      }
+    }
+  }
+
+/*
+  for (uint32_t ml=0; ml<header.scanner.scanner_geometry.ids.size(); ml++)
+  {
+    if (verbose>2) cout << "  --> Replicated module list #" << header.scanner.scanner_geometry.ids[ml] << endl;
+    // Get the module associated to this list
+    const auto& rep_module = header.scanner.scanner_geometry.replicated_modules[ml];
+    // Allocate the table of ids
+    table_petsird2castor_id[ml] = (uint32_t***)malloc(rep_module.transforms.size()*sizeof(uint32_t**));
+    // Loop over the transforms associated to the replicated module
+    for (uint32_t mtr=0; mtr<rep_module.transforms.size(); mtr++)
+    {
+      if (verbose>2) cout << "    --> Module #" << rep_module.ids[mtr] << endl;
+      // Get the transform associated to this module
+      const auto& mod_transform = rep_module.transforms[mtr];
+      // Allocate the table of ids
+      table_petsird2castor_id[ml][mtr] = (uint32_t**)malloc(rep_module.object.detecting_element_ids.size()*sizeof(uint32_t*));
+      // Loop over the lists of replicated detector elements
+      for (uint32_t dl=0; dl<rep_module.object.detecting_element_ids.size(); dl++)
+      {
+        if (verbose>2) cout << "      --> Replicated detector list #" << rep_module.object.detecting_element_ids[dl] << endl;
+        // Get the replicated detector element associated to this list
+        const auto& rep_volume = rep_module.object.detecting_elements[dl];
+        // Get the box shape
+	/////////////////////////////////////////////////////////////////
+	// NICOLAS: For normal reading, leave the first line uncommented.
+	// To apply a shift, comment the first line and uncomment the two
+	// following lines. The shift can be changed in the function
+	// translate_BoxShape. It is currently +1.6 over Y and Z.
+	// The shift applied here is only applied on the reference volume
+	// that is then transformed using the transformations as read from
+	// the petsird file.
+        const auto& box_shape = rep_volume.object.shape;
+        //const auto& box_shape_orig = rep_volume.object.shape;
+	//const auto& box_shape = translate_BoxShape(box_shape_orig);
+	/////////////////////////////////////////////////////////////////
+        // Compute centroid
+        if (verbose>3)
+        {
+          const auto& orig_centroid = compute_centroid_BoxShape(box_shape);
+          cout << "        | Original detecting element centroid #" << flat_index << " [" << orig_centroid.c[0] << "; " << orig_centroid.c[1] << "; " << orig_centroid.c[2] << "]" << endl;
+        }
+        // Allocate the table of ids
+        table_petsird2castor_id[ml][mtr][dl] = (uint32_t*)malloc(rep_volume.transforms.size()*sizeof(uint32_t));
+        // Loop over the transforms associated to the replicated volume
+        for (uint32_t dtr=0; dtr<rep_volume.transforms.size(); dtr++)
+        {
+          if (verbose>2) cout << "        --> Volume #" << rep_volume.ids[dtr] << endl;
+          // Get the transform associated to this volume
+          const auto& vol_transform = rep_volume.transforms[dtr];
+          // Apply transformations on the box
+          const auto& transformed_box_shape = transform_BoxShape(box_shape, vol_transform, mod_transform);
+          // Compute centroid
+          const auto& centroid = compute_centroid_BoxShape(transformed_box_shape);
+          // Verbose
+          if (verbose>2)
+          {
+            cout << "          | Detector id: " << flat_index << " | PETSIRD detector ids [ " << ml << " ; " << mtr << " ; " << dl << " ; " << dtr << " ]" << endl;
+            cout << "          | Centroid [" << centroid.c[0] << "; " << centroid.c[1] << "; " << centroid.c[2] << "] mm" << endl;
+          }
+	  if (verbose>4)
+	  {
+            cout << "          | Press enter to continue" << endl;
+            getchar();
+	  }
+          // Write centroid into the CASToR LUT file
+	  if (flag_write)
+	  {
+            // This is the centroid of the detecting element
+            nb_data_written_in_lut += fwrite(&(centroid.c[0]), sizeof(float), 1, flut);
+            nb_data_written_in_lut += fwrite(&(centroid.c[1]), sizeof(float), 1, flut);
+            nb_data_written_in_lut += fwrite(&(centroid.c[2]), sizeof(float), 1, flut);
+	    // The orientation vector is set to zero for now
+            float zero = 0.;
+            nb_data_written_in_lut += fwrite(&zero, sizeof(float), 1, flut);
+            nb_data_written_in_lut += fwrite(&zero, sizeof(float), 1, flut);
+            nb_data_written_in_lut += fwrite(&zero, sizeof(float), 1, flut);
+	  }
+          // Add the indices to the map
+          tuple<uint32_t, uint32_t, uint32_t, uint32_t> petsird_ids = tuple(ml, mtr, dl, dtr);
+          map_petsird2castor_id.insert({ petsird_ids, flat_index });
+          map_castor2petsird_id.insert({ flat_index, petsird_ids });
+          table_petsird2castor_id[ml][mtr][dl][dtr] = flat_index;
+          // Increment the flat index
+          flat_index++;
+          // Update min/max x,y,z
+          if (centroid.c[0]<min_x) min_x = centroid.c[0];
+          if (centroid.c[1]<min_y) min_y = centroid.c[1];
+          if (centroid.c[2]<min_z) min_z = centroid.c[2];
+          if (centroid.c[0]>max_x) max_x = centroid.c[0];
+          if (centroid.c[1]>max_y) max_y = centroid.c[1];
+          if (centroid.c[2]>max_z) max_z = centroid.c[2];
+	  // Update center of mass
+	  center_x += ((double)(centroid.c[0]));
+	  center_y += ((double)(centroid.c[1]));
+	  center_z += ((double)(centroid.c[2]));
+        }
+      }
+    }
+  }
+*/
 
 //   // Finish center of mass computation
 //   center_x /= ((double)flat_index);
