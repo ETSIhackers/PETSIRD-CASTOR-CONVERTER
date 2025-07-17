@@ -258,15 +258,15 @@ int main(int argc, char** argv)
   }
 
   // Declare the maps to get from petsird 4 IDs to CASToR flatenned ID
-  // zxc Now it is three? Type Module, module instances, detector instance?
+  // zxc Nope, not a DetectionBin, since include energy... No type for the thing, as a matter of fact...
   map<tuple<petsird::TypeOfModule, petsird::DetectionBin>, uint32_t> map_petsird2castor_id;
   map<uint32_t, tuple<petsird::TypeOfModule, petsird::DetectionBin>> map_castor2petsird_id;
 
   // The table to get castor ids from petsird ids
   int nb_detectors_in_scanner = 0;
-  for (petsird::TypeOfModule tm=0; tm<header.scanner.scanner_geometry.NumberOfReplicatedModules(); tm++)
+  for (petsird::TypeOfModule mod_type=0; mod_type<header.scanner.scanner_geometry.NumberOfReplicatedModules(); mod_type++)
   {
-    nb_detectors_in_scanner += petsird_helpers::get_num_det_els(header.scanner, tm);
+    nb_detectors_in_scanner += petsird_helpers::get_num_det_els(header.scanner, mod_type);
   }
   if (verbose>1) cout << "--> Number of detector in scanner : " << nb_detectors_in_scanner << endl;
   //OBS uint32_t**** table_petsird2castor_id = (uint32_t****)malloc(nb_detectors_in_scanner * sizeof(uint32_t***));
@@ -293,24 +293,23 @@ int main(int argc, char** argv)
   petsird::ExpandedDetectionBin expanded_detection_bin;
   // Unsure if init is needed
   expanded_detection_bin.energy_index = 0;
-  for (uint32_t typeMod=0; typeMod<header.scanner.scanner_geometry.NumberOfReplicatedModules(); typeMod++)
+  for (uint32_t mod_type=0; mod_type<header.scanner.scanner_geometry.NumberOfReplicatedModules(); mod_type++)
   {
-    auto& rep_module = header.scanner.scanner_geometry.replicated_modules[typeMod];
+    auto& rep_module = header.scanner.scanner_geometry.replicated_modules[mod_type];
     auto& det_els = rep_module.object.detecting_elements;
-    for (uint32_t repMod=0; repMod<rep_module.transforms.size(); repMod++)
+    for (uint32_t rep_mod=0; rep_mod<rep_module.transforms.size(); rep_mod++)
     {
-      expanded_detection_bin.module_index = repMod;
-      for (uint32_t detEl=0; detEl<det_els.transforms.size(); detEl++)
+      expanded_detection_bin.module_index = rep_mod;
+      for (uint32_t det_el=0; det_el<det_els.transforms.size(); det_el++)
       {
-        expanded_detection_bin.element_index = detEl;
-        // zxc typeMod Should be object? Seems ok in ana
-        auto box = petsird_helpers::geometry::get_detecting_box(header.scanner, typeMod, expanded_detection_bin);
+        expanded_detection_bin.element_index = det_el;
+        auto box = petsird_helpers::geometry::get_detecting_box(header.scanner, mod_type, expanded_detection_bin);
         // Compute centroid
         auto centroid = compute_centroid_BoxShape(box);
         // Verbose
         if (verbose>2)
         {
-          cout << "          | Detector id: " << flat_index << " | PETSIRD detector ids [ " << typeMod << " ; " << repMod << " ; " << detEl << " ]" << endl;
+          cout << "          | Detector id: " << flat_index << " | PETSIRD detector ids [ " << mod_type << " ; " << rep_mod << " ; " << det_el << " ]" << endl;
           cout << "          | Centroid [" << centroid.c[0] << "; " << centroid.c[1] << "; " << centroid.c[2] << "] mm" << endl;
         }
         if (verbose>4)
@@ -332,8 +331,8 @@ int main(int argc, char** argv)
           nb_data_written_in_lut += fwrite(&zero, sizeof(float), 1, flut);
         }
         // Add the indices to the map
-        petsird::DetectionBin detection_bin = petsird_helpers::make_detection_bin(header.scanner, typeMod, expanded_detection_bin);
-        tuple<petsird::TypeOfModule, petsird::DetectionBin> petsird_ids = tuple(typeMod,detection_bin);
+        petsird::DetectionBin detection_bin = petsird_helpers::make_detection_bin(header.scanner, mod_type, expanded_detection_bin);
+        tuple<petsird::TypeOfModule, petsird::DetectionBin> petsird_ids = tuple(mod_type,detection_bin);
         map_petsird2castor_id.insert({ petsird_ids, flat_index });
         map_castor2petsird_id.insert({ flat_index, petsird_ids });
         //OBS table_petsird2castor_id[ml][mtr][dl][dtr] = flat_index;
@@ -454,7 +453,7 @@ int main(int argc, char** argv)
       {
         // Get the detection efficiency for this detector pair (TODO: manage energies)
         const petsird::TypeOfModulePair type_of_module_pair{ 0, 0 }; // TODO manage different module pairs
-        float eff = petsird_helpers::get_detection_efficiency( header.scanner, type_of_module_pair, id1, id2 );
+        float eff = petsird_helpers::get_detection_efficiency( header.scanner, type_of_module_pair, id1, id2 ); //zxc not sure jkl map_castor2petsird_id
         // Verbose
         if (verbose>2) cout << "  --> Pair [ " << id1 << " ; " << id2 << " ] efficiency is " << eff << endl << flush;
         if (verbose>4)
@@ -546,24 +545,24 @@ int main(int argc, char** argv)
     bool tof_quantization = true;
     double tof_quantization_bin_size_in_ps = -1.;
     // Search for the higher number of TOF bins through pairs of module types
-    int header_scanner_NumberOfTOFBins = 1;
+    int max_nb_tof_bins = 1;
     bool varying_number_of_tof_bins = false;
     for (yardl::Size module_type1=0; module_type1<header.scanner.scanner_geometry.NumberOfReplicatedModules(); module_type1++)
     {
       for (yardl::Size module_type2=module_type1; module_type2<header.scanner.scanner_geometry.NumberOfReplicatedModules(); module_type2++)
       {
-        int current_NumberOfTOFBins = header.scanner.tof_bin_edges[module_type1][module_type2].NumberOfBins();
-        if (current_NumberOfTOFBins > header_scanner_NumberOfTOFBins)
+        int curr_nb_tof_bins = header.scanner.tof_bin_edges[module_type1][module_type2].NumberOfBins();
+        if (curr_nb_tof_bins > max_nb_tof_bins)
         {
 //          cout << "rm1: " << module_type1 << " | rm2: " << module_type2 << " | number of TOF bins: " << header.scanner.tof_bin_edges[module_type1][module_type2].NumberOfBins() << endl;
-          if (header_scanner_NumberOfTOFBins!=1) varying_number_of_tof_bins = true;
-          header_scanner_NumberOfTOFBins = current_NumberOfTOFBins;
+          if (max_nb_tof_bins!=1) varying_number_of_tof_bins = true;
+          max_nb_tof_bins = curr_nb_tof_bins;
         }
       }
     }
 
     // If more than one TOF bin, then we assume TOF is enable
-    if (header_scanner_NumberOfTOFBins!=1)
+    if (max_nb_tof_bins!=1)
     {
       // IMPORTANT NOTE: CASToR works in the following way wrt TOF. For histogram/sinogram,
       // the TOF bin size is unique. For listmode data, the measurement is supposed to be a
@@ -592,11 +591,11 @@ int main(int argc, char** argv)
       float tof_resolution_default = header.scanner.tof_resolution[0][0];
       if (header.scanner.scanner_geometry.NumberOfReplicatedModules()>1)
       {
-        for (yardl::Size rm1=1; rm1<header.scanner.scanner_geometry.NumberOfReplicatedModules(); rm1++)
+        for (yardl::Size mod_type1=1; mod_type1<header.scanner.scanner_geometry.NumberOfReplicatedModules(); mod_type1++)
         {
-          for (yardl::Size rm2=rm1; rm2<header.scanner.scanner_geometry.NumberOfReplicatedModules(); rm2++)
+          for (yardl::Size mod_type2=mod_type1; mod_type2<header.scanner.scanner_geometry.NumberOfReplicatedModules(); mod_type2++)
           {
-            if (header.scanner.tof_resolution[rm1][rm2]!=tof_resolution_default)
+            if (header.scanner.tof_resolution[mod_type1][mod_type2]!=tof_resolution_default)
             {
               cerr << "***** Varying TOF resolution not supported, YET !" << endl;
               return 1;
@@ -611,19 +610,19 @@ int main(int argc, char** argv)
       if (verbose>1)
       {
         cout << "--> TOF FWHM resolution: " << tof_resolution_default << " mm (" << tof_resolution_in_ps << " ps)" << endl;
-        cout << "--> Number of TOF bins: " << header_scanner_NumberOfTOFBins << endl;
+        cout << "--> Number of TOF bins: " << max_nb_tof_bins << endl;
         cout << "--> PETSIRD TOF bin edges: " << header.scanner.tof_bin_edges[0][0].edges << endl;
       }
       // Compute mean TOF bin size in mm from petsird header values
       double mean_tof_bin_size_in_mm = 0.;
-      for (int tb=0; tb<header_scanner_NumberOfTOFBins; tb++)
+      for (int tb=0; tb<max_nb_tof_bins; tb++)
         mean_tof_bin_size_in_mm += header.scanner.tof_bin_edges[0][0].edges[tb+1] - header.scanner.tof_bin_edges[0][0].edges[tb];
-      mean_tof_bin_size_in_mm /= ((double)(header_scanner_NumberOfTOFBins));
+      mean_tof_bin_size_in_mm /= ((double)(max_nb_tof_bins));
       // Compute standard deviation of the TOF bin size
       double stdv_tof_bin_size_in_mm = 0.;
-      for (int tb=0; tb<header_scanner_NumberOfTOFBins; tb++)
+      for (int tb=0; tb<max_nb_tof_bins; tb++)
         stdv_tof_bin_size_in_mm += pow((mean_tof_bin_size_in_mm - header.scanner.tof_bin_edges[0][0].edges[tb+1] + header.scanner.tof_bin_edges[0][0].edges[tb]) , 2.);
-      stdv_tof_bin_size_in_mm /= ((double)(header_scanner_NumberOfTOFBins));
+      stdv_tof_bin_size_in_mm /= ((double)(max_nb_tof_bins));
       // Check hypothesis that the TOF bin size is fixed
       double difference_in_tof_bin_size_tolerance_in_percent = 0.1;
       if (100. * stdv_tof_bin_size_in_mm / mean_tof_bin_size_in_mm > difference_in_tof_bin_size_tolerance_in_percent)
@@ -644,7 +643,7 @@ int main(int argc, char** argv)
         if (verbose>1) cout << "--> CASToR quantization bin size: " << tof_quantization_bin_size_in_ps << " ps" << endl;
       }
       // Compute the range of TOF measurements for CASToR
-      tof_measurement_range_in_ps = ( header.scanner.tof_bin_edges[0][0].edges[header_scanner_NumberOfTOFBins] - header.scanner.tof_bin_edges[0][0].edges[0] )
+      tof_measurement_range_in_ps = ( header.scanner.tof_bin_edges[0][0].edges[max_nb_tof_bins] - header.scanner.tof_bin_edges[0][0].edges[0] )
                                   * 2. / speed_of_light_in_mm_per_ps;
       // Verbose
       if (verbose>1) cout << "--> CASToR TOF measurement range: " << tof_measurement_range_in_ps << " ps" << endl;
