@@ -5,7 +5,7 @@ Initiative (ETSI), https://etisinitiative.org.
 
 Main contributors:
 Simon Stute (Laboratoire CRCI2NA, INSERM, CNRS, Nantes Université, FR)
-zxc Nicolas? (zxc)
+Aurélien Coussat
 Maxime Toussaint (Laboratoire CRCI2NA, INSERM, CNRS, Nantes Université, FR)
 
 ### Apache License ###

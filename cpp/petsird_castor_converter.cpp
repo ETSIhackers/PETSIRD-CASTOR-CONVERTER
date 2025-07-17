@@ -2,15 +2,19 @@
 #include <vector>
 #include <tuple>
 #include <map>
+// Dependencies
+#include <xtensor/xio.hpp>
+#include <xtensor/xview.hpp>
+// PETSIRD
 #include "petsird_helpers.h"
 #include "petsird_helpers/geometry.h"
-#include "generated/hdf5/protocols.h"
 #include "generated/types.h"
-#include <xtensor/xview.hpp>
-#include <xtensor/xio.hpp>
 #include "generated/binary/protocols.h"
-using petsird::binary::PETSIRDReader;
+#include "generated/hdf5/protocols.h"
+
+// Short-hand
 using namespace std;
+using petsird::binary::PETSIRDReader;
 
 // ===============================================================
 // Function: compute_centroid_BoxShape()
@@ -501,8 +505,8 @@ int main(int argc, char** argv)
         cerr << "***** Failed to create castor normalization header file '" << castor_hnorm_file << "' for writing !" << endl;
         exit(1);
       }
-      cdhn << "Scanner name: " << scanner_name << endl;
-      cdhn << "Data filename: " << castor_norm_file << endl;
+      cdhn << "Scanner name: " << scanner_name.substr(scanner_name.find_last_of("/\\") + 1) << endl;
+      cdhn << "Data filename: " << castor_norm_file.substr(castor_norm_file.find_last_of("/\\") + 1) << endl; // zxc
       cdhn << "Number of events: " << nb_valid_lors << endl;
       cdhn << "Data mode: normalization" << endl;
       cdhn << "Data type: PET" << endl;
@@ -681,17 +685,17 @@ int main(int argc, char** argv)
         auto& event_time_block = std::get<petsird::EventTimeBlock>(time_block);
         last_time = event_time_block.time_interval.stop;
         if (verbose>2) cout << "  --> Time block index " << time_block_index << " with time " << last_time << endl << flush;
-        const petsird::TypeOfModulePair type_of_module_pair{ 0, 0 }; 
-        num_prompts += event_time_block.prompt_events[type_of_module_pair[0]][type_of_module_pair[1]].size(); 
+        const petsird::TypeOfModulePair type_of_module_pair{ 0, 0 };
+        num_prompts += event_time_block.prompt_events[type_of_module_pair[0]][type_of_module_pair[1]].size();
         if (verbose>2) cout << "    | Number of prompts: " << num_prompts << endl << flush;
         if (verbose>5)
         {
           cout << "    | Press enter to continue" << endl;
           getchar();
         }
-        // Note: just doing one module-type ATM 
-        for (auto& event : event_time_block.prompt_events[type_of_module_pair[0]][type_of_module_pair[1]]) 
-        { 
+        // Note: just doing one module-type ATM
+        for (auto& event : event_time_block.prompt_events[type_of_module_pair[0]][type_of_module_pair[1]])
+        {
           // Verbose
           if (verbose>=4) cout << "--> Process new event #" << nb_events << endl;
           // Deal with time
@@ -769,8 +773,8 @@ int main(int argc, char** argv)
         cerr << "***** Failed to create castor header file '" << castor_header_file << "' for writing !" << endl;
         exit(1);
       }
-      cdh << "Scanner name: " << scanner_name << endl;
-      cdh << "Data filename: " << castor_data_file << endl;
+      cdh << "Scanner name: " << scanner_name.substr(scanner_name.find_last_of("/\\") + 1) << endl;
+      cdh << "Data filename: " << castor_data_file.substr(castor_data_file.find_last_of("/\\") + 1) << endl; // zxc
       cdh << "Number of events: " << nb_events << endl;
       cdh << "Data mode: listmode" << endl;
       cdh << "Data type: PET" << endl;
