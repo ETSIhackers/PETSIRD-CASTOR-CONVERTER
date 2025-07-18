@@ -16,6 +16,9 @@
 using namespace std;
 using petsird::binary::PETSIRDReader;
 
+// Type
+#define det_bin_wo_ener uint32_t;
+
 // ===============================================================
 // Function: compute_centroid_BoxShape()
 // Arguments: BoxShape
@@ -221,6 +224,7 @@ int main(int argc, char** argv)
 
   // Get scanner name
   string scanner_name = header.scanner.model_name;
+  // string scanner_name = header.scanner.model_name + "_256mmAFOV";
   // If scanner name is empty
   if (scanner_name=="")
   {
@@ -259,8 +263,8 @@ int main(int argc, char** argv)
 
   // Declare the maps to get from petsird 4 IDs to CASToR flatenned ID
   // zxc Now it is three? Type Module, module instances, detector instance?
-  map<tuple<petsird::TypeOfModule, petsird::DetectionBin>, uint32_t> map_petsird2castor_id;
-  map<uint32_t, tuple<petsird::TypeOfModule, petsird::DetectionBin>> map_castor2petsird_id;
+  map<tuple<petsird::TypeOfModule, det_bin_wo_ener>, uint32_t> map_petsird2castor_id;
+  map<uint32_t, tuple<petsird::TypeOfModule, det_bin_wo_ener>> map_castor2petsird_id;
 
   // The table to get castor ids from petsird ids
   int nb_detectors_in_scanner = 0;
@@ -332,7 +336,8 @@ int main(int argc, char** argv)
           nb_data_written_in_lut += fwrite(&zero, sizeof(float), 1, flut);
         }
         // Add the indices to the map
-        petsird::DetectionBin detection_bin = petsird_helpers::make_detection_bin(header.scanner, typeMod, expanded_detection_bin);
+        // TODO: Not a detection bin, should be without energy bin
+        det_bin_wo_ener detection_bin = petsird_helpers::make_detection_bin(header.scanner, typeMod, expanded_detection_bin);
         tuple<petsird::TypeOfModule, petsird::DetectionBin> petsird_ids = tuple(typeMod,detection_bin);
         map_petsird2castor_id.insert({ petsird_ids, flat_index });
         map_castor2petsird_id.insert({ flat_index, petsird_ids });
