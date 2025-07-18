@@ -23,6 +23,16 @@ After compilation, run `petsird_castor_converter --help` to see how to use the c
 
 # Known limitations
 - Multi-TOF kernels or bins are not supported.
+- Orientation of the LUT are zero vectors.
+- Only supports scanner with one type of module.
+- Energy bins are not supported.
+- Currently, all event are setted at 1 ms.
+- Crystal size is unknown, thus it cannot be used for multiSiddon or Distance Driven projectors.
 
-# TODOs in the contribution
-zxc to fix after hackathon
+# TODOs
+- Clean up the notation.
+- Supports scanner with multiple type of modules.
+- Add a check for the number of energy bins.
+- Make sure that DetectionBins are not used as CASToR detector elements
+- Suport time paquets.
+- Enable user to give the scanner a name since many examples do not have scanner name

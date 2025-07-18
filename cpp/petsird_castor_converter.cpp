@@ -17,7 +17,7 @@ using namespace std;
 using petsird::binary::PETSIRDReader;
 
 // Type
-#define det_bin_wo_ener uint32_t;
+using det_bin_wo_ener = uint32_t;
 
 // ===============================================================
 // Function: compute_centroid_BoxShape()
