@@ -22,7 +22,26 @@ Compiling the converter:
 After compilation, run `petsird_castor_converter --help` to see how to use the converter.
 
 # Known limitations
-- Multi-TOF kernels or bins are not supported.
+- CASToR related:
+  - Multi-TOF bins are not supported.
+  - Energy bins are not supported.
+- PETSIRD standard related:
+  - Orientation of the LUT are currently defined as zero vectors.
+  - Crystal size is unknown, thus it cannot be used for multiSiddon or Distance Driven projectors.
+- Others
+  - Only supports scanner with one type of module.
+  - Currently, all event are setted at 1 ms.
 
-# TODOs in the contribution
-zxc to fix after hackathon
+# TODOs
+- Soon-ish
+  - Clean up the notation.
+  - Support time paquets.
+  - Crash when detecting multiple types of module.
+  - Enable user to give the scanner a name since many examples do not have scanner name.
+  - Crash when detecting multiple energy bins.
+- Wait for scanner to support these?
+  - Supports scanner with multiple type of modules IF they don't differ in detectors size.
+  - Make sure that DetectionBins are not used as CASToR detector elements (Needed to support multiple type of modules).
+  - Add supports for multi-TOF kernels.
+- Future
+  - Deduce the size of detectors and propose a voxel size.
