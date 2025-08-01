@@ -34,11 +34,11 @@ After compilation, run `petsird_castor_converter --help` to see how to use the c
 
 # TODOs
 - Soon-ish
-  - Clean up the notation.
+  x Clean up the notation.
   - Support time paquets.
-  - Crash when detecting multiple types of module.
-  - Enable user to give the scanner a name since many examples do not have scanner name.
-  - Crash when detecting multiple energy bins.
+  x Crash when detecting multiple types of module.
+  x Enable user to give the scanner a name since many examples do not have scanner name.
+  x Crash when detecting multiple energy bins.
 - Wait for scanner to support these?
   - Supports scanner with multiple type of modules IF they don't differ in detectors size.
   - Make sure that DetectionBins are not used as CASToR detector elements (Needed to support multiple type of modules).

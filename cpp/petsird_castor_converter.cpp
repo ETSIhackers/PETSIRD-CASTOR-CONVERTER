@@ -1,7 +1,7 @@
 #include <iostream>
+#include <map>
 #include <vector>
 #include <tuple>
-#include <map>
 // Dependencies
 #include <xtensor/xio.hpp>
 #include <xtensor/xview.hpp>
@@ -14,6 +14,7 @@
 
 // Short-hand
 using namespace std;
+// zxc add flag for hdf5
 using petsird::binary::PETSIRDReader;
 
 // Type
@@ -57,7 +58,7 @@ petsird::Coordinate compute_centroid_BoxShape(const petsird::BoxShape& box_shape
 void show_help()
 {
   cout << endl;
-  cout << "Usage:  petsird_castor_converter  -in input_file.petsird  [-out output_base_name]  [options]" << endl;
+  cout << "Usage:  petsird_castor_converter  -in input_file.petsird  [-out path_fout]  [options]" << endl;
   cout << endl;
   cout << "[Description]:" << endl;
   cout << "  This program can be used to convert a PETSIRD file into files suitable for CASToR." << endl;
@@ -113,13 +114,17 @@ int main(int argc, char** argv)
   // Input petsird file
   string petsird_file = "";
   // Output base name
-  string output_base_name = "";
+  string path_fout = "";
   // Flag to go into normalization/efficiency
   bool flag_norm = false;
   // Flag to go into listmode data
   bool flag_list = false;
   // Flag to say that we write some output
   bool flag_write = false;
+  // Scanner name
+  string scanner_name = "";
+  // Where to save the scanner hscan/lut files
+  string config_path = "";
 
   // ----------------------------------
   // Read parameters list
@@ -148,13 +153,35 @@ int main(int argc, char** argv)
         cerr << "***** Argument missing after option '" << option << "' !" << endl;
         exit(1);
       }
-      output_base_name = (string)argv[i+1];
+      path_fout = (string)argv[i+1];
       i++;
     }
     // Flags to enable actions
     else if (option=="-norm") flag_norm = true;
     else if (option=="-list") flag_list = true;
     else if (option=="-write") flag_write = true;
+    // User-provided scanner name
+    else if (option=="-scanner")
+    {
+      if (i==argc-1)
+      {
+        cerr << "***** Argument missing after option '" << option << "' !" << endl;
+        exit(1);
+      }
+      scanner_name = (string)argv[i+1];
+      i++;
+    }
+    // Where to save the scanner lut/hscan files
+    else if (option=="-config")
+    {
+      if (i==argc-1)
+      {
+        cerr << "***** Argument missing after option '" << option << "' !" << endl;
+        exit(1);
+      }
+      config_path = (string)argv[i+1];
+      i++;
+    }
     // Verbose level
     else if (option=="-vb")
     {
@@ -192,7 +219,7 @@ int main(int argc, char** argv)
     exit(1);
   }
   // Required output base name
-  if (flag_write && output_base_name=="")
+  if (flag_write && path_fout=="")
   {
     cerr << "***** An output base name is required !" << endl;
     exit(1);
@@ -222,17 +249,20 @@ int main(int argc, char** argv)
   petsird::Header header;
   reader.ReadHeader(header);
 
-  // Get scanner name
-  string scanner_name = header.scanner.model_name;
-  // string scanner_name = header.scanner.model_name + "_256mmAFOV";
-  // If scanner name is empty
   if (scanner_name=="")
   {
-    // If not writing things, then use a generic one
-    if (!flag_write) scanner_name = "petsird_scanner";
-    // If writing things, then use the output base name
-    else scanner_name = output_base_name;
+    // If user did not provide a scanner name, get the one in the petsird file
+    scanner_name = header.scanner.model_name;
+    // If scanner name is empty
+    if (scanner_name=="")
+    {
+      // If not writing things, then use a generic one
+      if (!flag_write) scanner_name = "petsird_scanner";
+      // If writing things, then use the output base name
+      else scanner_name = scanner_name.substr(scanner_name.find_last_of("/\\") + 1);
+    }
   }
+
   if (verbose>1) cout << "--> Scanner model: " << scanner_name << endl;
 
   // -------------------------------------------------------------------------------
@@ -252,17 +282,25 @@ int main(int argc, char** argv)
   FILE* flut = NULL;
   if (flag_write)
   {
-    string scanner_lut_file = scanner_name + ".lut";
+    string scanner_lut_file = config_path + scanner_name + ".lut";
     flut = fopen(scanner_lut_file.c_str(), "wb");
     if (flut==NULL)
     {
-      cerr << "***** Failed to create output CASToR LUT file '" << scanner_lut_file << "' !" << endl;
+      string scanner_files_path = "";
+      if (config_path != "")
+      {
+        scanner_files_path = config_path + "/" + scanner_name + ".lut";
+      }
+      else
+      {
+        scanner_files_path = scanner_name + ".lut";
+      }
+      cerr << "***** Failed to create output CASToR LUT file '" << scanner_files_path << "' !" << endl;
       exit(1);
     }
   }
 
-  // Declare the maps to get from petsird 4 IDs to CASToR flatenned ID
-  // zxc Now it is three? Type Module, module instances, detector instance?
+  // Declare the maps to get from petsird 2 IDs to CASToR flatenned ID
   map<tuple<petsird::TypeOfModule, det_bin_wo_ener>, uint32_t> map_petsird2castor_id;
   map<uint32_t, tuple<petsird::TypeOfModule, det_bin_wo_ener>> map_castor2petsird_id;
 
@@ -271,9 +309,19 @@ int main(int argc, char** argv)
   for (petsird::TypeOfModule mod_type=0; mod_type<header.scanner.scanner_geometry.NumberOfReplicatedModules(); mod_type++)
   {
     nb_detectors_in_scanner += petsird_helpers::get_num_det_els(header.scanner, mod_type);
+
+    if (header.scanner.event_energy_bin_edges[0].NumberOfBins() != 1)
+    {
+      cerr << "***** Currently, CASToR converter does not support scanner with mutiple energy bins!" << endl;
+      exit(1);
+    }
+    if (mod_type == 1)
+    {
+      cerr << "***** Currently, CASToR converter does not support scanner with more than one module type!" << endl;
+      exit(1);
+    }
   }
   if (verbose>1) cout << "--> Number of detector in scanner : " << nb_detectors_in_scanner << endl;
-  //OBS uint32_t**** table_petsird2castor_id = (uint32_t****)malloc(nb_detectors_in_scanner * sizeof(uint32_t***));
 
   // We will search for the minimum and maximum positions in each axis independently
   // We initialize the values with the centroid position of the first detecting element
@@ -295,9 +343,9 @@ int main(int argc, char** argv)
   if (verbose>1) cout << "--> Processing scanner elements" << endl;
   uint32_t flat_index = 0;
   petsird::ExpandedDetectionBin expanded_detection_bin;
-  // Unsure if init is needed
+  // Unsure if init of energy index is needed
   expanded_detection_bin.energy_index = 0;
-  for (uint32_t mod_type=0; mod_type<header.scanner.scanner_geometry.NumberOfReplicatedModules(); mod_type++)
+  for (petsird::TypeOfModule mod_type=0; mod_type<header.scanner.scanner_geometry.NumberOfReplicatedModules(); mod_type++)
   {
     auto& rep_module = header.scanner.scanner_geometry.replicated_modules[mod_type];
     auto& det_els = rep_module.object.detecting_elements;
@@ -336,10 +384,9 @@ int main(int argc, char** argv)
         }
         // Add the indices to the map
         det_bin_wo_ener detection_bin = petsird_helpers::make_detection_bin(header.scanner, mod_type, expanded_detection_bin);
-        tuple<petsird::TypeOfModule, petsird::DetectionBin> petsird_ids = tuple(mod_type,detection_bin);
+        tuple<petsird::TypeOfModule, petsird::DetectionBin> petsird_ids = tuple(mod_type, detection_bin);
         map_petsird2castor_id.insert({ petsird_ids, flat_index });
         map_castor2petsird_id.insert({ flat_index, petsird_ids });
-        //OBS table_petsird2castor_id[ml][mtr][dl][dtr] = flat_index;
         // Increment the flat index
         flat_index++;
         // Update min/max x,y,z
@@ -389,7 +436,8 @@ int main(int argc, char** argv)
   // Write scanner header
   if (flag_write)
   {
-    string scanner_hscan_file = scanner_name + ".hscan";
+    // zxc provide scanner config location
+    string scanner_hscan_file = config_path + scanner_name + ".hscan";
     ofstream hscan(scanner_hscan_file.c_str());
     if (!hscan)
     {
@@ -398,10 +446,10 @@ int main(int argc, char** argv)
     }
     hscan << "modality: PET" << endl;
     hscan << "number of elements: " << flat_index << endl;
-    hscan << "scanner radius: " << max(max_y-min_y,max_x-min_x) << endl;
+    hscan << "scanner radius: " << max(max_y-min_y, max_x-min_x) << endl;
     hscan << "voxels number transaxial: 100" << endl;
     hscan << "voxels number axial: 100" << endl;
-    hscan << "field of view transaxial: " << max(max_y-min_y,max_x-min_x) << endl;
+    hscan << "field of view transaxial: " << max(max_y-min_y, max_x-min_x) << endl;
     hscan << "field of view axial: " << max_z-min_z << endl;
     hscan << "mean depth of interaction: -1" << endl;
     hscan << "######################################################" << endl;
@@ -434,7 +482,7 @@ int main(int argc, char** argv)
     if (verbose>1) cout << "====================================================" << endl;
 
     // Open castor normalization file
-    string castor_norm_file = output_base_name + "_norm.cdf";
+    string castor_norm_file = path_fout + "_norm.cdf";
     FILE* fnorm = NULL;
     if (flag_write)
     {
@@ -457,7 +505,7 @@ int main(int argc, char** argv)
       {
         // Get the detection efficiency for this detector pair (TODO: manage energies)
         const petsird::TypeOfModulePair type_of_module_pair{ 0, 0 }; // TODO manage different module pairs
-        float eff = petsird_helpers::get_detection_efficiency( header.scanner, type_of_module_pair, id1, id2 ); //zxc not sure jkl map_castor2petsird_id
+        float eff = petsird_helpers::get_detection_efficiency( header.scanner, type_of_module_pair, id1, id2 );
         // Verbose
         if (verbose>2) cout << "  --> Pair [ " << id1 << " ; " << id2 << " ] efficiency is " << eff << endl << flush;
         if (verbose>4)
@@ -473,9 +521,9 @@ int main(int argc, char** argv)
           // Write data
           if (flag_write)
           {
-            nb_data_written_in_norm += fwrite(&norm,sizeof(float),1,fnorm);
-            nb_data_written_in_norm += fwrite(&id1,sizeof(uint32_t),1,fnorm);
-            nb_data_written_in_norm += fwrite(&id2,sizeof(uint32_t),1,fnorm);
+            nb_data_written_in_norm += fwrite(&norm, sizeof(float), 1, fnorm);
+            nb_data_written_in_norm += fwrite(&id1, sizeof(uint32_t), 1, fnorm);
+            nb_data_written_in_norm += fwrite(&id2, sizeof(uint32_t), 1, fnorm);
           }
           // Increment the number of valid lors
           nb_valid_lors++;
@@ -501,20 +549,20 @@ int main(int argc, char** argv)
     // Write castor header file
     if (flag_write)
     {
-      string castor_hnorm_file = output_base_name + "_norm.cdh";
+      string castor_hnorm_file = path_fout + "_norm.cdh";
       ofstream cdhn(castor_hnorm_file.c_str());
       if (!cdhn)
       {
         cerr << "***** Failed to create castor normalization header file '" << castor_hnorm_file << "' for writing !" << endl;
         exit(1);
       }
-      cdhn << "Scanner name: " << scanner_name.substr(scanner_name.find_last_of("/\\") + 1) << endl;
-      cdhn << "Data filename: " << castor_norm_file.substr(castor_norm_file.find_last_of("/\\") + 1) << endl; // zxc
+      cdhn << "Scanner name: " << scanner_name << endl;
+      cdhn << "Data filename: " << castor_norm_file.substr(castor_norm_file.find_last_of("/\\") + 1) << endl;
       cdhn << "Number of events: " << nb_valid_lors << endl;
       cdhn << "Data mode: normalization" << endl;
       cdhn << "Data type: PET" << endl;
       cdhn << "Start time (s): 0" << endl;
-      cdhn << "Duration (s): 1" << endl;
+      cdhn << "Duration (s): 1" << endl; // bnm Change to support time packets
       cdhn << "Normalization correction flag: 1" << endl;
       cdhn.close();
       // Verbose
@@ -551,14 +599,14 @@ int main(int argc, char** argv)
     // Search for the higher number of TOF bins through pairs of module types
     int max_nb_tof_bins = 1;
     bool varying_number_of_tof_bins = false;
-    for (yardl::Size module_type1=0; module_type1<header.scanner.scanner_geometry.NumberOfReplicatedModules(); module_type1++)
+    for (yardl::Size mod_type1=0; mod_type1<header.scanner.scanner_geometry.NumberOfReplicatedModules(); mod_type1++)
     {
-      for (yardl::Size module_type2=module_type1; module_type2<header.scanner.scanner_geometry.NumberOfReplicatedModules(); module_type2++)
+      for (yardl::Size mod_type2=mod_type1; mod_type2<header.scanner.scanner_geometry.NumberOfReplicatedModules(); mod_type2++)
       {
-        int curr_nb_tof_bins = header.scanner.tof_bin_edges[module_type1][module_type2].NumberOfBins();
+        int curr_nb_tof_bins = header.scanner.tof_bin_edges[mod_type1][mod_type2].NumberOfBins();
         if (curr_nb_tof_bins > max_nb_tof_bins)
         {
-//          cout << "rm1: " << module_type1 << " | rm2: " << module_type2 << " | number of TOF bins: " << header.scanner.tof_bin_edges[module_type1][module_type2].NumberOfBins() << endl;
+//          cout << "rm1: " << mod_type1 << " | rm2: " << mod_type2 << " | number of TOF bins: " << header.scanner.tof_bin_edges[mod_type1][mod_type2].NumberOfBins() << endl;
           if (max_nb_tof_bins!=1) varying_number_of_tof_bins = true;
           max_nb_tof_bins = curr_nb_tof_bins;
         }
@@ -664,7 +712,7 @@ int main(int argc, char** argv)
     uint32_t time_block_index = 0;
 
     // Open castor data file
-    string castor_data_file = output_base_name + ".cdf";
+    string castor_data_file = path_fout + ".cdf";
     FILE* fcastor = NULL;
     if (flag_write)
     {
@@ -769,15 +817,15 @@ int main(int argc, char** argv)
     // Write castor header file
     if (flag_write)
     {
-      string castor_header_file = output_base_name + ".cdh";
+      string castor_header_file = path_fout + ".cdh";
       ofstream cdh(castor_header_file.c_str());
       if (!cdh)
       {
         cerr << "***** Failed to create castor header file '" << castor_header_file << "' for writing !" << endl;
         exit(1);
       }
-      cdh << "Scanner name: " << scanner_name.substr(scanner_name.find_last_of("/\\") + 1) << endl;
-      cdh << "Data filename: " << castor_data_file.substr(castor_data_file.find_last_of("/\\") + 1) << endl; // zxc
+      cdh << "Scanner name: " << scanner_name << endl;
+      cdh << "Data filename: " << castor_data_file.substr(castor_data_file.find_last_of("/\\") + 1) << endl;
       cdh << "Number of events: " << nb_events << endl;
       cdh << "Data mode: listmode" << endl;
       cdh << "Data type: PET" << endl;
