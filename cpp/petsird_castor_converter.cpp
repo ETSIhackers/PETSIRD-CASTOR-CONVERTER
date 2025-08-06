@@ -14,7 +14,7 @@
 
 // Short-hand
 using namespace std;
-// zxc add flag for hdf5
+// add flag for hdf5?
 using petsird::binary::PETSIRDReader;
 
 // Type
@@ -436,7 +436,6 @@ int main(int argc, char** argv)
   // Write scanner header
   if (flag_write)
   {
-    // zxc provide scanner config location
     string scanner_hscan_file = config_path + scanner_name + ".hscan";
     ofstream hscan(scanner_hscan_file.c_str());
     if (!hscan)
@@ -707,7 +706,9 @@ int main(int argc, char** argv)
 
     // Process events by time blocks
     std::size_t num_prompts = 0;
-    float last_time = 0.F;
+    float lastest_time = numeric_limits<float>::min();
+    float earliest_time = numeric_limits<float>::max();
+    uint32_t event_time = 0.F;
     petsird::TimeBlock time_block;
     uint32_t time_block_index = 0;
 
@@ -725,6 +726,7 @@ int main(int argc, char** argv)
     }
     uint64_t nb_data_written = 0;
     uint64_t nb_events = 0;
+    bool is_time_monotone = true;
 
     // Loop on time blocks
     if (verbose>1) cout << "--> Processing time blocks" << endl;
@@ -734,8 +736,31 @@ int main(int argc, char** argv)
       if (std::holds_alternative<petsird::EventTimeBlock>(time_block))
       {
         auto& event_time_block = std::get<petsird::EventTimeBlock>(time_block);
-        last_time = event_time_block.time_interval.stop;
-        if (verbose>2) cout << "  --> Time block index " << time_block_index << " with time " << last_time << endl << flush;
+        if ((is_time_monotone == true) && (event_time_block.time_interval.stop < event_time))
+        {
+          is_time_monotone = false;
+          lastest_time += 1;
+          // CASToR stop processing the event after the time interval is reached. It is a
+          // problem when a file is the concatenation of multiple acquisitions with same
+          // time interval
+          if (verbose>1) cout << "Time is not monotone. Last time observed is increased by 1ms" << endl;
+        }
+        // bnm start or end?
+        event_time = event_time_block.time_interval.stop;
+        if (event_time > lastest_time)
+        {
+          lastest_time = event_time;
+          if (is_time_monotone == false)
+          {
+            // Since one could concatenate two acquisitions with the second having a longer
+            // duration, we need to re-check, if needed, if time is monotone each time the
+            // largest time is registered.
+            is_time_monotone = true;
+          }
+        }
+        if (event_time_block.time_interval.start < earliest_time) earliest_time = event_time_block.time_interval.start;
+
+        if (verbose>2) cout << "  --> Time block index " << time_block_index << " with time " << event_time << " and last time observed " << lastest_time << endl << flush;
         const petsird::TypeOfModulePair type_of_module_pair{ 0, 0 };
         num_prompts += event_time_block.prompt_events[type_of_module_pair[0]][type_of_module_pair[1]].size();
         if (verbose>2) cout << "    | Number of prompts: " << num_prompts << endl << flush;
@@ -749,13 +774,12 @@ int main(int argc, char** argv)
         {
           // Verbose
           if (verbose>=4) cout << "--> Process new event #" << nb_events << endl;
-          // Deal with time
-          uint32_t time_zero = 1;
+
           if (flag_write)
           {
-            nb_data_written += fwrite(&time_zero, sizeof(uint32_t), 1, fcastor);
+            nb_data_written += fwrite(&event_time, sizeof(uint32_t), 1, fcastor);
           }
-          if (verbose>=4) cout << "  | Time: " << time_zero << endl;
+          if (verbose>=4) cout << "  | Time: " << event_time << endl;
           // Normalization factor (inverse of efficiency)
           if (flag_norm)
           {
@@ -829,8 +853,8 @@ int main(int argc, char** argv)
       cdh << "Number of events: " << nb_events << endl;
       cdh << "Data mode: listmode" << endl;
       cdh << "Data type: PET" << endl;
-      cdh << "Start time (s): 0" << endl;
-      cdh << "Duration (s): 1" << endl;
+      cdh << "Start time (s): " << earliest_time / 1000 << endl;
+      cdh << "Duration (s): " << lastest_time / 1000 << endl;
       if (flag_norm) cdh << "Normalization correction flag: 1" << endl;
       else cdh << "Normalization correction flag: 0" << endl;
       if (tof_enable)
