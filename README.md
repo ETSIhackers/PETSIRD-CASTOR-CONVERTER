@@ -33,12 +33,6 @@ After compilation, run `petsird_castor_converter --help` to see how to use the c
   - Currently, all event are setted at 1 ms.
 
 # TODOs
-- Soon-ish
-  x Clean up the notation.
-  - Support time paquets.
-  x Crash when detecting multiple types of module.
-  x Enable user to give the scanner a name since many examples do not have scanner name.
-  x Crash when detecting multiple energy bins.
 - Wait for scanner to support these?
   - Supports scanner with multiple type of modules IF they don't differ in detectors size.
   - Make sure that DetectionBins are not used as CASToR detector elements (Needed to support multiple type of modules).
