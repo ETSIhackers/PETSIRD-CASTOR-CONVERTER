@@ -259,7 +259,7 @@ int main(int argc, char** argv)
       // If not writing things, then use a generic one
       if (!flag_write) scanner_name = "petsird_scanner";
       // If writing things, then use the output base name
-      else scanner_name = scanner_name.substr(scanner_name.find_last_of("/\\") + 1);
+      else scanner_name = path_fout.substr(path_fout.find_last_of("/\\") + 1);
     }
   }
 
@@ -286,16 +286,7 @@ int main(int argc, char** argv)
     flut = fopen(scanner_lut_file.c_str(), "wb");
     if (flut==NULL)
     {
-      string scanner_files_path = "";
-      if (config_path != "")
-      {
-        scanner_files_path = config_path + "/" + scanner_name + ".lut";
-      }
-      else
-      {
-        scanner_files_path = scanner_name + ".lut";
-      }
-      cerr << "***** Failed to create output CASToR LUT file '" << scanner_files_path << "' !" << endl;
+      cerr << "***** Failed to create output CASToR LUT file '" << scanner_lut_file << "' !" << endl;
       exit(1);
     }
   }
