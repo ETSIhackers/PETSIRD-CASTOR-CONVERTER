@@ -8,9 +8,9 @@
 // PETSIRD
 #include "petsird_helpers.h"
 #include "petsird_helpers/geometry.h"
-#include "generated/types.h"
-#include "generated/binary/protocols.h"
-#include "generated/hdf5/protocols.h"
+#include "petsird/types.h"
+#include "petsird/binary/protocols.h"
+#include "petsird/hdf5/protocols.h"
 
 // Short-hand
 using namespace std;
@@ -50,6 +50,35 @@ petsird::Coordinate compute_centroid_BoxShape(const petsird::BoxShape& box_shape
     return centroid_coord;
 }
 // ===============================================================
+// Function: compute_minimum_corners_distance()
+// Arguments: BoxShape
+// Return: float
+// Description: The minimum distance between 2 corners of the 8
+//              corners of the supplied box shape is computed and
+//              returned as a coordinate.
+// ===============================================================
+// ===============================================================
+float compute_minimum_corners_distance(const petsird::BoxShape& box)
+{
+  float result = -1.;
+  // Loop on first corner
+  for (int c1=0; c1<8; c1++)
+  {
+    // Loop on second corner
+    for (int c2=c1+1; c2<8; c2++)
+    {
+      // Compute distance between the two corners
+      float distance = 0.;
+      for (int i=0; i<3; i++) distance += pow( box.corners[c1].c[i]-box.corners[c2].c[i] , 2. );
+      distance = sqrt(distance);
+      // Check if minimum or first distance
+      if (result<0. || distance<result) result = distance;
+    }
+  }
+  // Return the distance
+  return result;
+}
+// ===============================================================
 // ===============================================================
 // Function: show_help()
 // Description: Prints out help about usage and option on screen.
@@ -76,6 +105,7 @@ void show_help()
   cout << "                         (needed with option -write)." << endl;
   cout << "  -norm                : Go into normalization/efficiency description." << endl;
   cout << "  -list                : Go into listmode data." << endl;
+  cout << "  -scanner name        : Force the name of the scanner to be written." << endl;
   cout << "  -write               : Actually write the CASToR output associated to each action." << endl;
   cout << "  -vb level            : Give an integer verbose level; 0 nothing, 1 global, 2 more details," << endl;
   cout << "                         3 printing in loops, 4 even more printing, 5 become interactive (default: 1)." << endl;
@@ -329,6 +359,8 @@ int main(int argc, char** argv)
   double center_x = 0.;
   double center_y = 0.;
   double center_z = 0.;
+  // We search for the minimum crystal dimension (to estimate the voxel size)
+  float min_crys_dimension = -1.;
 
   // Loop over the lists of replicates module (top level in the scanner geomety)
   if (verbose>1) cout << "--> Processing scanner elements" << endl;
@@ -391,6 +423,9 @@ int main(int argc, char** argv)
         center_x += ((double)(centroid.c[0]));
         center_y += ((double)(centroid.c[1]));
         center_z += ((double)(centroid.c[2]));
+        // Compute minimum distance between two corners and update minimul crystal dimension
+        float distance = compute_minimum_corners_distance(box);
+        if (min_crys_dimension<0. || distance<min_crys_dimension) min_crys_dimension = distance;
       }
     }
   }
@@ -405,10 +440,11 @@ int main(int argc, char** argv)
   {
     cout << "--> Number of detecting elements: " << flat_index << endl;
     cout << "--> Min/Max of detector elements centroid coordinates" << endl;
-    cout << "  | Along X axis [ " << min_x << " ; " << max_x << " ]" << endl;
-    cout << "  | Along Y axis [ " << min_y << " ; " << max_y << " ]" << endl;
-    cout << "  | Along Z axis [ " << min_z << " ; " << max_z << " ]" << endl;
-    cout << "--> Scanner center of mass: [ " << center_x << " ; " << center_y << " ; " << center_z << " ]" << endl;
+    cout << "  | Along X axis [ " << min_x << " ; " << max_x << " ] mm" << endl;
+    cout << "  | Along Y axis [ " << min_y << " ; " << max_y << " ] mm" << endl;
+    cout << "  | Along Z axis [ " << min_z << " ; " << max_z << " ] mm" << endl;
+    cout << "--> Scanner center of mass: [ " << center_x << " ; " << center_y << " ; " << center_z << " ] mm" << endl;
+    cout << "--> Minimum crystal dimension: " << min_crys_dimension << " mm" << endl;
   }
 
   // Close scanner LUT file
@@ -437,10 +473,15 @@ int main(int argc, char** argv)
     hscan << "modality: PET" << endl;
     hscan << "number of elements: " << flat_index << endl;
     hscan << "scanner radius: " << max(max_y-min_y, max_x-min_x) << endl;
-    hscan << "voxels number transaxial: 100" << endl;
-    hscan << "voxels number axial: 100" << endl;
-    hscan << "field of view transaxial: " << max(max_y-min_y, max_x-min_x) << endl;
-    hscan << "field of view axial: " << max_z-min_z << endl;
+    // Field of view dimensions
+    float fov_trans_mm = max(max_y-min_y, max_x-min_x);
+    float fov_axial_mm = max_z-min_z;
+    hscan << "field of view transaxial: " << fov_trans_mm << endl;
+    hscan << "field of view axial: " << fov_axial_mm << endl;
+    // Default numbers of voxels
+    float voxel_size = min_crys_dimension / 2.;
+    hscan << "voxels number transaxial: " << ((int)(fov_trans_mm / voxel_size)) << endl;
+    hscan << "voxels number axial: " << ((int)(fov_axial_mm / voxel_size)) << endl;
     hscan << "mean depth of interaction: -1" << endl;
     hscan << "######################################################" << endl;
     hscan << "# The following lines are irrelevant because cannot be" << endl;
@@ -839,6 +880,7 @@ int main(int argc, char** argv)
         cerr << "***** Failed to create castor header file '" << castor_header_file << "' for writing !" << endl;
         exit(1);
       }
+      cdh << "## This header and data were generated by petsird2castor convert ##" << endl;
       cdh << "Scanner name: " << scanner_name << endl;
       cdh << "Data filename: " << castor_data_file.substr(castor_data_file.find_last_of("/\\") + 1) << endl;
       cdh << "Number of events: " << nb_events << endl;
@@ -859,7 +901,10 @@ int main(int argc, char** argv)
       {
         cdh << "TOF information flag: 0" << endl;
       }
-      // TODO: time management
+      // Calibration factor for CASToR is 1. because the petsird calibration factor
+      // is embedded into the normalization factors
+      cdh << "# Calibration factor is embedded into the normalization factors" << endl;
+      cdh << "Calibration factor: 1." << endl;
       cdh.close();
       // Verbose
       if (verbose>1) cout << "--> CASToR header file '" << castor_header_file << "' written" << endl;
