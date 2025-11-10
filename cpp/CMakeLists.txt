@@ -16,15 +16,16 @@ else()
   add_compile_options(-Wall -Wextra -pedantic)
 endif()
 
-set(PETSIRD_dir ../PETSIRD/cpp/generated)
-add_subdirectory(${PETSIRD_dir} PETSIRD_generated)
+set(PETSIRD_dir ../PETSIRD/cpp/)
+add_subdirectory(${PETSIRD_dir} PETSIRD)
 
 
-# add_executable(petsird_castor_converter petsird_castor_converter.cpp)
+add_executable(petsird_castor_converter petsird_castor_converter.cpp)
 # target_include_directories(petsird_castor_converter PRIVATE "${PETSIRD_dir}/")
-# # needed for generated PETSIRD files
+# needed for generated PETSIRD files
 # target_include_directories(petsird_castor_converter PRIVATE "${PETSIRD_dir}/../")
 # target_include_directories(petsird_castor_converter PRIVATE "${PETSIRD_dir}/../helpers/include")
 # target_link_libraries(petsird_castor_converter petsird_generated)
+target_link_libraries(petsird_castor_converter PUBLIC petsird_helpers)
 
 # # install(TARGETS my_prog DESTINATION bin)
