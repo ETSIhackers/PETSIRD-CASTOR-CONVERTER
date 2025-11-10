@@ -10,7 +10,7 @@
 #include "petsird_helpers/geometry.h"
 #include "petsird/types.h"
 #include "petsird/binary/protocols.h"
-#include "petsird/hdf5/protocols.h"
+//#include "petsird/hdf5/protocols.h"
 
 // Short-hand
 using namespace std;
@@ -775,7 +775,7 @@ int main(int argc, char** argv)
           // CASToR stop processing the event after the time interval is reached. It is a
           // problem when a file is the concatenation of multiple acquisitions with same
           // time interval
-          if (verbose>1) cout << "Time is not monotone. Last time observed is increased by 1ms" << endl;
+          if (verbose>1) cout << "!!!!! Time is not monotone. Last time observed is increased by 1ms" << endl;
         }
         // bnm start or end?
         event_time = event_time_block.time_interval.stop;
@@ -896,6 +896,7 @@ int main(int argc, char** argv)
         cdh << "TOF resolution (ps): " << tof_resolution_in_ps << endl;
         cdh << "List TOF measurement range (ps): " << tof_measurement_range_in_ps << endl;
         if (tof_quantization) cdh << "List TOF quantization bin size (ps): " << tof_quantization_bin_size_in_ps << endl;
+        cdh << "Per event TOF resolution flag: 0" << endl;
       }
       else
       {
