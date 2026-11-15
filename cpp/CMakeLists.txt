@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.12.0) # older would work, but could give warnings on policy CMP0074
 project(PETSIRDUseCaseTemplate VERSION 0.7.2)
 
-set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD 20)
 
 #Set the build type to Release if not specified
 if (NOT CMAKE_BUILD_TYPE)
@@ -16,9 +16,11 @@ else()
   add_compile_options(-Wall -Wextra -pedantic)
 endif()
 
-set(PETSIRD_dir ../PETSIRD/cpp/)
-add_subdirectory(${PETSIRD_dir} PETSIRD)
+#set(PETSIRD_dir ../PETSIRD/cpp/)
+#add_subdirectory(${PETSIRD_dir} PETSIRD)
 
+find_package(PETSIRD 0.13 REQUIRED CONFIG)
+#target_include_directories(petsird_castor_converter PUBLIC PETSIRD::helpers)
 
 add_executable(petsird_castor_converter petsird_castor_converter.cpp)
 # target_include_directories(petsird_castor_converter PRIVATE "${PETSIRD_dir}/")
@@ -26,6 +28,8 @@ add_executable(petsird_castor_converter petsird_castor_converter.cpp)
 # target_include_directories(petsird_castor_converter PRIVATE "${PETSIRD_dir}/../")
 # target_include_directories(petsird_castor_converter PRIVATE "${PETSIRD_dir}/../helpers/include")
 # target_link_libraries(petsird_castor_converter petsird_generated)
-target_link_libraries(petsird_castor_converter PUBLIC petsird_helpers)
+
+#target_link_libraries(petsird_castor_converter PUBLIC petsird_helpers)
+target_link_libraries(petsird_castor_converter PUBLIC PETSIRD::helpers)
 
 # # install(TARGETS my_prog DESTINATION bin)

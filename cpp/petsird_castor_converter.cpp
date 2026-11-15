@@ -3,8 +3,8 @@
 #include <vector>
 #include <tuple>
 // Dependencies
-#include <xtensor/xio.hpp>
-#include <xtensor/xview.hpp>
+#include <xtensor/io/xio.hpp>
+#include <xtensor/views/xview.hpp>
 // PETSIRD
 #include "petsird_helpers.h"
 #include "petsird_helpers/geometry.h"
