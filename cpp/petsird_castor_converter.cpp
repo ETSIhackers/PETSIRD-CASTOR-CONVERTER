@@ -279,6 +279,10 @@ int main(int argc, char** argv)
   petsird::Header header;
   reader.ReadHeader(header);
 
+  cout << "PETSIRD calibration factor: "
+     << header.scanner.detection_efficiencies.calibration_factor
+     << endl;
+
   if (scanner_name=="")
   {
     // If user did not provide a scanner name, get the one in the petsird file
@@ -379,26 +383,29 @@ int main(int argc, char** argv)
       {
         expanded_detection_bin.element_index = det_el;
         auto box = petsird_helpers::geometry::get_detecting_box(header.scanner, mod_type, expanded_detection_bin);
-        // Compute centroid
-        auto centroid = compute_centroid_BoxShape(box);
+        
+        // Get the Average Detection Position (ADP)
+        auto ADP = petsird_helpers::geometry::get_ADP(header.scanner, mod_type, expanded_detection_bin);
+        
+        
         // Verbose
         if (verbose>2)
         {
           cout << "          | Detector id: " << flat_index << " | PETSIRD detector ids [ " << mod_type << " ; " << rep_mod << " ; " << det_el << " ]" << endl;
-          cout << "          | Centroid [" << centroid.c[0] << "; " << centroid.c[1] << "; " << centroid.c[2] << "] mm" << endl;
+          cout << "          | Average Detection Position (ADP) [" << ADP.c[0] << "; " << ADP.c[1] << "; " << ADP.c[2] << "] mm" << endl;
         }
         if (verbose>4)
         {
           cout << "          | Press enter to continue" << endl;
           getchar();
         }
-        // Write centroid into the CASToR LUT file
+        // Write ADP into the CASToR LUT file
         if (flag_write)
         {
-          // This is the centroid of the detecting element
-          nb_data_written_in_lut += fwrite(&(centroid.c[0]), sizeof(float), 1, flut);
-          nb_data_written_in_lut += fwrite(&(centroid.c[1]), sizeof(float), 1, flut);
-          nb_data_written_in_lut += fwrite(&(centroid.c[2]), sizeof(float), 1, flut);
+          // This is the ADP of the detecting element
+          nb_data_written_in_lut += fwrite(&(ADP.c[0]), sizeof(float), 1, flut);
+          nb_data_written_in_lut += fwrite(&(ADP.c[1]), sizeof(float), 1, flut);
+          nb_data_written_in_lut += fwrite(&(ADP.c[2]), sizeof(float), 1, flut);
           // The orientation vector is set to zero for now
           float zero = 0.;
           nb_data_written_in_lut += fwrite(&zero, sizeof(float), 1, flut);
@@ -413,16 +420,16 @@ int main(int argc, char** argv)
         // Increment the flat index
         flat_index++;
         // Update min/max x,y,z
-        if (centroid.c[0]<min_x) min_x = centroid.c[0];
-        if (centroid.c[1]<min_y) min_y = centroid.c[1];
-        if (centroid.c[2]<min_z) min_z = centroid.c[2];
-        if (centroid.c[0]>max_x) max_x = centroid.c[0];
-        if (centroid.c[1]>max_y) max_y = centroid.c[1];
-        if (centroid.c[2]>max_z) max_z = centroid.c[2];
+        if (ADP.c[0]<min_x) min_x = ADP.c[0];
+        if (ADP.c[1]<min_y) min_y = ADP.c[1];
+        if (ADP.c[2]<min_z) min_z = ADP.c[2];
+        if (ADP.c[0]>max_x) max_x = ADP.c[0];
+        if (ADP.c[1]>max_y) max_y = ADP.c[1];
+        if (ADP.c[2]>max_z) max_z = ADP.c[2];
         // Update center of mass
-        center_x += ((double)(centroid.c[0]));
-        center_y += ((double)(centroid.c[1]));
-        center_z += ((double)(centroid.c[2]));
+        center_x += ((double)(ADP.c[0]));
+        center_y += ((double)(ADP.c[1]));
+        center_z += ((double)(ADP.c[2]));
         // Compute minimum distance between two corners and update minimul crystal dimension
         float distance = compute_minimum_corners_distance(box);
         if (min_crys_dimension<0. || distance<min_crys_dimension) min_crys_dimension = distance;
@@ -439,7 +446,7 @@ int main(int argc, char** argv)
   if (verbose>1)
   {
     cout << "--> Number of detecting elements: " << flat_index << endl;
-    cout << "--> Min/Max of detector elements centroid coordinates" << endl;
+    cout << "--> Min/Max of detector elements ADP coordinates" << endl;
     cout << "  | Along X axis [ " << min_x << " ; " << max_x << " ] mm" << endl;
     cout << "  | Along Y axis [ " << min_y << " ; " << max_y << " ] mm" << endl;
     cout << "  | Along Z axis [ " << min_z << " ; " << max_z << " ] mm" << endl;
@@ -904,8 +911,8 @@ int main(int argc, char** argv)
       }
       // Calibration factor for CASToR is 1. because the petsird calibration factor
       // is embedded into the normalization factors
-      cdh << "# Calibration factor is embedded into the normalization factors" << endl;
-      cdh << "Calibration factor: 1." << endl;
+      //cdh << "# Calibration factor is embedded into the normalization factors" << endl;
+      cdh << "Calibration factor: " << header.scanner.detection_efficiencies.calibration_factor<< endl;
       cdh.close();
       // Verbose
       if (verbose>1) cout << "--> CASToR header file '" << castor_header_file << "' written" << endl;
