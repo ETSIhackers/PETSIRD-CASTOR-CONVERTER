@@ -536,7 +536,7 @@ int main(int argc, char** argv)
       {
         // Get the detection efficiency for this detector pair (TODO: manage energies)
         const petsird::TypeOfModulePair type_of_module_pair{ 0, 0 }; // TODO manage different module pairs
-        float eff = petsird_helpers::get_detection_efficiency( header.scanner, type_of_module_pair, id1, id2 );
+        float eff = petsird_helpers::get_detection_efficiency( header.scanner, type_of_module_pair, id2, id1 );
         // Verbose
         if (verbose>2) cout << "  --> Pair [ " << id1 << " ; " << id2 << " ] efficiency is " << eff << endl << flush;
         if (verbose>4)
@@ -767,6 +767,7 @@ int main(int argc, char** argv)
       // Check if it is an actual event time block
       if (std::holds_alternative<petsird::EventTimeBlock>(time_block))
       {
+	// ----- T I M E   M A N A G E M E N T
         auto& event_time_block = std::get<petsird::EventTimeBlock>(time_block);
         if ((is_time_monotone == true) && (event_time_block.time_interval.stop < event_time))
         {
@@ -791,8 +792,9 @@ int main(int argc, char** argv)
           }
         }
         if (event_time_block.time_interval.start < earliest_time) earliest_time = event_time_block.time_interval.start;
-
         if (verbose>2) cout << "  --> Time block index " << time_block_index << " with time " << event_time << " and last time observed " << lastest_time << endl << flush;
+
+	// ----- P R O M P T S   M A N A G E M E N T
         const petsird::TypeOfModulePair type_of_module_pair{ 0, 0 };
         num_prompts += event_time_block.prompt_events[type_of_module_pair[0]][type_of_module_pair[1]].size();
         if (verbose>2) cout << "    | Number of prompts: " << num_prompts << endl << flush;
@@ -807,6 +809,7 @@ int main(int argc, char** argv)
           // Verbose
           if (verbose>=4) cout << "--> Process new event #" << nb_events << endl;
 
+	  // Write in castor file: 1 --> time
           if (flag_write)
           {
             nb_data_written += fwrite(&event_time, sizeof(uint32_t), 1, fcastor);
@@ -819,6 +822,7 @@ int main(int argc, char** argv)
             float eff = petsird_helpers::get_detection_efficiency( header.scanner, type_of_module_pair, event.detection_bins[0], event.detection_bins[1] );
             float norm = 0.;
             if (eff>0.) norm = 1. / eff;
+	    // Write in castor file: 2 --> normalization correction factor
             if (flag_write) nb_data_written += fwrite(&norm, sizeof(float), 1, fcastor);
             if (verbose>=4) cout << "  | normalization factor: " << norm << endl;
           }
@@ -828,6 +832,7 @@ int main(int argc, char** argv)
             // Compute TOF measurement considered in the center of the TOF bin
             float petsird_tof_middle_point_in_mm = (header.scanner.tof_bin_edges[0][0].edges[event.tof_idx+1]+header.scanner.tof_bin_edges[0][0].edges[event.tof_idx])/2.;
             float castor_tof_measurement_in_ps = petsird_tof_middle_point_in_mm * 2. / speed_of_light_in_mm_per_ps;
+	    // Write in castor file: 3 --> TOF value
             if (flag_write) nb_data_written += fwrite(&castor_tof_measurement_in_ps, sizeof(float), 1, fcastor);
             if (verbose>=4) cout << "  | TOF measurement (ps): " << castor_tof_measurement_in_ps << endl;
           }
@@ -839,6 +844,7 @@ int main(int argc, char** argv)
           auto search2 = map_petsird2castor_id.find(petsird_id2);
           uint32_t castor_id1 = search1->second;
           uint32_t castor_id2 = search2->second;
+	  // Write in castor file: 4 --> crystal indices
           if (flag_write)
           {
             nb_data_written += fwrite(&castor_id1, sizeof(uint32_t), 1, fcastor);
