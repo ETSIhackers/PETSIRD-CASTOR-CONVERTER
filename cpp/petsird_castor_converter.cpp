@@ -79,6 +79,40 @@ float compute_minimum_corners_distance(const petsird::BoxShape& box)
   return result;
 }
 // ===============================================================
+// Function: is_time_in_selected_frames()
+// Description: Checks if a given time is within any of the selected frames.
+// ===============================================================
+// ===============================================================
+
+bool is_time_in_selected_frames(
+    uint32_t time_ms,
+    const std::vector<Frame>& frames)
+{
+    for (const auto& frame : frames)
+    {
+        uint64_t frame_start = frame.start_time_ms;
+        uint64_t frame_stop =
+            frame_start + frame.duration_ms;
+
+        if (time_ms >= frame_start && time_ms < frame_stop)
+            return true;
+    }
+
+    return false;
+}
+// ===============================================================
+// ===============================================================
+// Function: frame
+// Description: Prints out help about usage and option on screen.
+// ===============================================================
+// ===============================================================
+struct Frame
+{
+  unit32_t start_time_in_ms;
+  unit32_t duration_in_ms;
+};
+
+// ===============================================================
 // ===============================================================
 // Function: show_help()
 // Description: Prints out help about usage and option on screen.
@@ -103,6 +137,13 @@ void show_help()
   cout << "  -in file.petsird     : Provide the input petsird file to be converter" << endl;
   cout << "  -out output          : Provide an output base name used as a prefix for all output files" << endl;
   cout << "                         (needed with option -write)." << endl;
+  cout << "  -frm list            : Give the framing details for the reconstruction where 'list' is a list of frame start times, separated with commas. " << endl;
+  cout << "                         Duration for each frame can also be specified using a colon after the frame start time. "<< endl;
+  cout << "                         When no duration is specified for a frame, the duration will be set equal to the difference between the start of this frame and the next one."<< endl;
+  cout << "                         It is mandatory to specify the duration of the last frame. For example '-frm start1:duration1,start2,start3:duration3'."<< endl;
+  cout << "                         Add 's' or 'm' to specify if values are seconds or minutes (seconds is the default if none provided).  " << endl;
+  cout << "                         Maximum precision of frames is milliseconds. (default: 1 frame of the whole input file duration)." << endl;
+  cout << endl;
   cout << "  -norm                : Go into normalization/efficiency description." << endl;
   cout << "  -list                : Go into listmode data." << endl;
   cout << "  -scanner name        : Force the name of the scanner to be written." << endl;
@@ -155,6 +196,8 @@ int main(int argc, char** argv)
   string scanner_name = "";
   // Where to save the scanner hscan/lut files
   string config_path = "";
+  string frame_list = "";
+  vector<Frame> frames;
 
   // ----------------------------------
   // Read parameters list
@@ -186,6 +229,17 @@ int main(int argc, char** argv)
       path_fout = (string)argv[i+1];
       i++;
     }
+    // Dimensions: number of frames
+    else if (option=="-frm") // TODO: more checks to be done in the option reading
+    {
+      if (i>=argc-1)
+      {
+        Cerr("***** castor-recon() -> Argument missing for option: " << option << endl);
+        Exit(EXIT_FAILURE);
+      }
+      frame_list = (string)argv[i+1];
+      i++;
+    } 
     // Flags to enable actions
     else if (option=="-norm") flag_norm = true;
     else if (option=="-list") flag_list = true;
@@ -786,6 +840,16 @@ int main(int argc, char** argv)
         }
         // bnm start or end?
         event_time = event_time_block.time_interval.stop;
+
+        // check if the event time is in the selected time interval (if any)
+        if (event_time < time_interval_start || event_time > time_interval_stop)
+        {
+          if (verbose>2) cout << "  --> Time block index " << time_block_index << " with time " << event_time << " is outside the selected time interval [" << time_interval_start << "; " << time_interval_stop << "]" << endl;
+          // Increment time block index
+          time_block_index++;
+          continue;
+        }
+                
         if (event_time > lastest_time)
         {
           lastest_time = event_time;
