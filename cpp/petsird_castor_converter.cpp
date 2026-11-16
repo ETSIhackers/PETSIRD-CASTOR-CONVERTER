@@ -79,6 +79,40 @@ float compute_minimum_corners_distance(const petsird::BoxShape& box)
   return result;
 }
 // ===============================================================
+// Function: is_time_in_selected_frames()
+// Description: Checks if a given time is within any of the selected frames.
+// ===============================================================
+// ===============================================================
+
+bool is_time_in_selected_frames(
+    uint32_t time_ms,
+    const std::vector<Frame>& frames)
+{
+    for (const auto& frame : frames)
+    {
+        uint64_t frame_start = frame.start_time_ms;
+        uint64_t frame_stop =
+            frame_start + frame.duration_ms;
+
+        if (time_ms >= frame_start && time_ms < frame_stop)
+            return true;
+    }
+
+    return false;
+}
+// ===============================================================
+// ===============================================================
+// Function: frame
+// Description: Prints out help about usage and option on screen.
+// ===============================================================
+// ===============================================================
+struct Frame
+{
+  unit32_t start_time_in_ms;
+  unit32_t duration_in_ms;
+};
+
+// ===============================================================
 // ===============================================================
 // Function: show_help()
 // Description: Prints out help about usage and option on screen.
@@ -103,6 +137,13 @@ void show_help()
   cout << "  -in file.petsird     : Provide the input petsird file to be converter" << endl;
   cout << "  -out output          : Provide an output base name used as a prefix for all output files" << endl;
   cout << "                         (needed with option -write)." << endl;
+  cout << "  -frm list            : Give the framing details for the reconstruction where 'list' is a list of frame start times, separated with commas. " << endl;
+  cout << "                         Duration for each frame can also be specified using a colon after the frame start time. "<< endl;
+  cout << "                         When no duration is specified for a frame, the duration will be set equal to the difference between the start of this frame and the next one."<< endl;
+  cout << "                         It is mandatory to specify the duration of the last frame. For example '-frm start1:duration1,start2,start3:duration3'."<< endl;
+  cout << "                         Add 's' or 'm' to specify if values are seconds or minutes (seconds is the default if none provided).  " << endl;
+  cout << "                         Maximum precision of frames is milliseconds. (default: 1 frame of the whole input file duration)." << endl;
+  cout << endl;
   cout << "  -norm                : Go into normalization/efficiency description." << endl;
   cout << "  -list                : Go into listmode data." << endl;
   cout << "  -scanner name        : Force the name of the scanner to be written." << endl;
@@ -155,6 +196,8 @@ int main(int argc, char** argv)
   string scanner_name = "";
   // Where to save the scanner hscan/lut files
   string config_path = "";
+  string frame_list = "";
+  vector<Frame> frames;
 
   // ----------------------------------
   // Read parameters list
@@ -186,6 +229,17 @@ int main(int argc, char** argv)
       path_fout = (string)argv[i+1];
       i++;
     }
+    // Dimensions: number of frames
+    else if (option=="-frm") // TODO: more checks to be done in the option reading
+    {
+      if (i>=argc-1)
+      {
+        Cerr("***** castor-recon() -> Argument missing for option: " << option << endl);
+        Exit(EXIT_FAILURE);
+      }
+      frame_list = (string)argv[i+1];
+      i++;
+    } 
     // Flags to enable actions
     else if (option=="-norm") flag_norm = true;
     else if (option=="-list") flag_list = true;
@@ -278,6 +332,10 @@ int main(int argc, char** argv)
   // Read header
   petsird::Header header;
   reader.ReadHeader(header);
+
+  cout << "PETSIRD calibration factor: "
+     << header.scanner.detection_efficiencies.calibration_factor
+     << endl;
 
   if (scanner_name=="")
   {
@@ -379,26 +437,29 @@ int main(int argc, char** argv)
       {
         expanded_detection_bin.element_index = det_el;
         auto box = petsird_helpers::geometry::get_detecting_box(header.scanner, mod_type, expanded_detection_bin);
-        // Compute centroid
-        auto centroid = compute_centroid_BoxShape(box);
+        
+        // Get the Average Detection Position (ADP)
+        auto ADP = petsird_helpers::geometry::get_ADP(header.scanner, mod_type, expanded_detection_bin);
+        
+        
         // Verbose
         if (verbose>2)
         {
           cout << "          | Detector id: " << flat_index << " | PETSIRD detector ids [ " << mod_type << " ; " << rep_mod << " ; " << det_el << " ]" << endl;
-          cout << "          | Centroid [" << centroid.c[0] << "; " << centroid.c[1] << "; " << centroid.c[2] << "] mm" << endl;
+          cout << "          | Average Detection Position (ADP) [" << ADP.c[0] << "; " << ADP.c[1] << "; " << ADP.c[2] << "] mm" << endl;
         }
         if (verbose>4)
         {
           cout << "          | Press enter to continue" << endl;
           getchar();
         }
-        // Write centroid into the CASToR LUT file
+        // Write ADP into the CASToR LUT file
         if (flag_write)
         {
-          // This is the centroid of the detecting element
-          nb_data_written_in_lut += fwrite(&(centroid.c[0]), sizeof(float), 1, flut);
-          nb_data_written_in_lut += fwrite(&(centroid.c[1]), sizeof(float), 1, flut);
-          nb_data_written_in_lut += fwrite(&(centroid.c[2]), sizeof(float), 1, flut);
+          // This is the ADP of the detecting element
+          nb_data_written_in_lut += fwrite(&(ADP.c[0]), sizeof(float), 1, flut);
+          nb_data_written_in_lut += fwrite(&(ADP.c[1]), sizeof(float), 1, flut);
+          nb_data_written_in_lut += fwrite(&(ADP.c[2]), sizeof(float), 1, flut);
           // The orientation vector is set to zero for now
           float zero = 0.;
           nb_data_written_in_lut += fwrite(&zero, sizeof(float), 1, flut);
@@ -413,16 +474,16 @@ int main(int argc, char** argv)
         // Increment the flat index
         flat_index++;
         // Update min/max x,y,z
-        if (centroid.c[0]<min_x) min_x = centroid.c[0];
-        if (centroid.c[1]<min_y) min_y = centroid.c[1];
-        if (centroid.c[2]<min_z) min_z = centroid.c[2];
-        if (centroid.c[0]>max_x) max_x = centroid.c[0];
-        if (centroid.c[1]>max_y) max_y = centroid.c[1];
-        if (centroid.c[2]>max_z) max_z = centroid.c[2];
+        if (ADP.c[0]<min_x) min_x = ADP.c[0];
+        if (ADP.c[1]<min_y) min_y = ADP.c[1];
+        if (ADP.c[2]<min_z) min_z = ADP.c[2];
+        if (ADP.c[0]>max_x) max_x = ADP.c[0];
+        if (ADP.c[1]>max_y) max_y = ADP.c[1];
+        if (ADP.c[2]>max_z) max_z = ADP.c[2];
         // Update center of mass
-        center_x += ((double)(centroid.c[0]));
-        center_y += ((double)(centroid.c[1]));
-        center_z += ((double)(centroid.c[2]));
+        center_x += ((double)(ADP.c[0]));
+        center_y += ((double)(ADP.c[1]));
+        center_z += ((double)(ADP.c[2]));
         // Compute minimum distance between two corners and update minimul crystal dimension
         float distance = compute_minimum_corners_distance(box);
         if (min_crys_dimension<0. || distance<min_crys_dimension) min_crys_dimension = distance;
@@ -439,7 +500,7 @@ int main(int argc, char** argv)
   if (verbose>1)
   {
     cout << "--> Number of detecting elements: " << flat_index << endl;
-    cout << "--> Min/Max of detector elements centroid coordinates" << endl;
+    cout << "--> Min/Max of detector elements ADP coordinates" << endl;
     cout << "  | Along X axis [ " << min_x << " ; " << max_x << " ] mm" << endl;
     cout << "  | Along Y axis [ " << min_y << " ; " << max_y << " ] mm" << endl;
     cout << "  | Along Z axis [ " << min_z << " ; " << max_z << " ] mm" << endl;
@@ -780,6 +841,16 @@ int main(int argc, char** argv)
         }
         // bnm start or end?
         event_time = event_time_block.time_interval.stop;
+
+        // check if the event time is in the selected time interval (if any)
+        if (event_time < time_interval_start || event_time > time_interval_stop)
+        {
+          if (verbose>2) cout << "  --> Time block index " << time_block_index << " with time " << event_time << " is outside the selected time interval [" << time_interval_start << "; " << time_interval_stop << "]" << endl;
+          // Increment time block index
+          time_block_index++;
+          continue;
+        }
+                
         if (event_time > lastest_time)
         {
           lastest_time = event_time;
@@ -910,8 +981,8 @@ int main(int argc, char** argv)
       }
       // Calibration factor for CASToR is 1. because the petsird calibration factor
       // is embedded into the normalization factors
-      cdh << "# Calibration factor is embedded into the normalization factors" << endl;
-      cdh << "Calibration factor: 1." << endl;
+      //cdh << "# Calibration factor is embedded into the normalization factors" << endl;
+      cdh << "Calibration factor: " << header.scanner.detection_efficiencies.calibration_factor<< endl;
       cdh.close();
       // Verbose
       if (verbose>1) cout << "--> CASToR header file '" << castor_header_file << "' written" << endl;
